@@ -168,9 +168,21 @@ async function runDailyDistribution(
 
   // Herhangi bir güne atanmış TÜM lead'leri hariç tut (tekrar atama önleme)
   // Status filtresi YOK - bir lead bir kez atandıysa bir daha atanamaz
-  const { data: existingAssignments } = await supabase
+  const { data: existingAssignments, error: assignmentQueryError } = await supabase
     .from('assignments')
-    .select('lead_id')
+    .select('lead_id, scheduled_date')
+
+  if (assignmentQueryError) {
+    logger.error('Mevcut atamalar sorgulanamadı', { error: assignmentQueryError.message })
+  }
+
+  // Debug: Mevcut atamaların tarih dağılımını logla
+  const dateDistribution: Record<string, number> = {}
+  for (const a of existingAssignments ?? []) {
+    const date = a.scheduled_date as string
+    dateDistribution[date] = (dateDistribution[date] || 0) + 1
+  }
+  logger.info('Mevcut atama tarih dağılımı', { dateDistribution, totalAssignments: existingAssignments?.length ?? 0 })
 
   const assignedLeadIds = new Set(
     (existingAssignments ?? []).map((a) => a.lead_id as string)
@@ -274,7 +286,7 @@ async function runDailyDistribution(
     if (assignmentRows.length > 0) {
       const { error: asnErr } = await supabase
         .from('assignments')
-        .upsert(assignmentRows, { onConflict: 'lead_id,scheduled_date,assignment_type' })
+        .upsert(assignmentRows, { onConflict: 'lead_id' })
       if (asnErr) logger.error('VISIT assignments yazılamadı', { error: asnErr.message, agentId: route.agentId })
     }
   }
@@ -303,20 +315,29 @@ async function runDailyDistribution(
     if (assignmentRows.length > 0) {
       const { error: asnErr } = await supabase
         .from('assignments')
-        .upsert(assignmentRows, { onConflict: 'lead_id,scheduled_date,assignment_type' })
+        .upsert(assignmentRows, { onConflict: 'lead_id' })
       if (asnErr) logger.error('CALL assignments yazılamadı', { error: asnErr.message, agentId: callList.agentId })
     }
   }
 
   // Debug bilgileri
+  const leadsWithoutPhoneAndCoords = leads.filter((l) => l.phone === null && l.lat === null)
+  const leadsWithPhoneOnly = leads.filter((l) => l.phone !== null && l.lat === null)
+  const leadsWithCoordsOnly = leads.filter((l) => l.phone === null && l.lat !== null)
+
   const debug = {
     totalLeadsInDb: allLeads.length,
     alreadyAssigned: assignedLeadIds.size,
     availableLeads: leads.length,
     leadsWithPhone: leadsWithPhone.length,
     leadsWithCoords: leadsWithCoords.length,
+    leadsWithBoth: leadsWithBoth.length,
+    leadsWithPhoneOnly: leadsWithPhoneOnly.length,
+    leadsWithCoordsOnly: leadsWithCoordsOnly.length,
+    leadsWithoutPhoneAndCoords: leadsWithoutPhoneAndCoords.length,
     fieldAgents: distributionAgents.filter(a => a.role === 'FIELD_AGENT').length,
     telesalesAgents: distributionAgents.filter(a => a.role === 'TELESALES_AGENT').length,
+    assignmentDateDistribution: dateDistribution,
   }
 
   return { ...result, debug }
