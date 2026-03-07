@@ -156,6 +156,9 @@ async function runDailyDistribution(
     }
   }
 
+  // VERSION CHECK: v2 - limit 10000
+  console.log('=== DISTRIBUTE API VERSION: v2 (limit 10000) ===')
+
   // Lead'leri çek (puanlı, aktif) - Supabase varsayılan 1000 limiti var, açıkça yüksek limit ver
   const { data: leadsData } = await supabase
     .from('leads')
