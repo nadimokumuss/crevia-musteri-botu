@@ -2,5 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "regions": ["fra1"],
-  "crons": []
+  "crons": [
+    {
+      "path": "/api/cron/enrich-instagram",
+      "schedule": "* * * * *"
+    }
+  ]
 }
