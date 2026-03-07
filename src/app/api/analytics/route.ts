@@ -70,7 +70,8 @@ export async function GET(request: Request) {
       callListsResult,
       agentsResult,
     ] = await Promise.all([
-      supabase.from('leads').select('id, status, recommendation, category, need_score, created_at').gte('created_at', startDate).lte('created_at', endDateTime),
+      // Lead'ler için tarih filtresi YOK - tüm lead'leri göster
+      supabase.from('leads').select('id, status, recommendation, category, need_score, created_at'),
       supabase.from('assignments').select('id, agent_id, assignment_type, status, scheduled_date, agents!agent_id(full_name, role)').gte('scheduled_date', startDate).lte('scheduled_date', endDate),
       supabase.from('call_lists').select('id, items, total_items, completed_items, list_date').gte('list_date', startDate).lte('list_date', endDate),
       supabase.from('agents').select('id, full_name, role, is_active').eq('is_active', true),
