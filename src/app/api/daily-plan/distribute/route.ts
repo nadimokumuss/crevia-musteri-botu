@@ -107,7 +107,6 @@ export async function POST(request: NextRequest) {
         dayType,
         stats: result.stats,
         planId: plan.id,
-        debug: result.debug,
       })
     } catch (distError) {
       const errMsg = distError instanceof Error ? distError.message : 'Dağıtım hatası'
@@ -156,9 +155,6 @@ async function runDailyDistribution(
     }
   }
 
-  // VERSION CHECK: v3 - pagination ile tüm lead'leri çek
-  console.log('=== DISTRIBUTE API VERSION: v3 (pagination) ===')
-
   // Lead'leri pagination ile çek - Supabase max 1000 satır döndürüyor
   const allLeads: Lead[] = []
   const pageSize = 1000
@@ -187,8 +183,6 @@ async function runDailyDistribution(
     }
   }
 
-  console.log(`Toplam ${allLeads.length} lead çekildi (${page} sayfa)`)
-
   // Herhangi bir güne atanmış TÜM lead'leri hariç tut (tekrar atama önleme)
   // Assignments'ı da pagination ile çek
   const existingAssignments: Array<{ lead_id: string; scheduled_date: string }> = []
@@ -215,35 +209,11 @@ async function runDailyDistribution(
     }
   }
 
-  console.log(`Toplam ${existingAssignments.length} assignment çekildi (${assignmentPage} sayfa)`)
-
-  // Debug: Mevcut atamaların tarih dağılımını logla
-  const dateDistribution: Record<string, number> = {}
-  for (const a of existingAssignments ?? []) {
-    const date = a.scheduled_date as string
-    dateDistribution[date] = (dateDistribution[date] || 0) + 1
-  }
-  logger.info('Mevcut atama tarih dağılımı', { dateDistribution, totalAssignments: existingAssignments?.length ?? 0 })
-
   const assignedLeadIds = new Set(
     (existingAssignments ?? []).map((a) => a.lead_id as string)
   )
 
   const leads = allLeads.filter((l) => !assignedLeadIds.has(l.id))
-
-  // Debug: Lead dağılımını logla
-  const leadsWithPhone = leads.filter((l) => l.phone !== null)
-  const leadsWithCoords = leads.filter((l) => l.lat !== null && l.lng !== null)
-  const leadsWithBoth = leads.filter((l) => l.phone !== null && l.lat !== null && l.lng !== null)
-  logger.info('Dağıtım öncesi lead analizi', {
-    totalFromDb: allLeads.length,
-    alreadyAssigned: assignedLeadIds.size,
-    availableLeads: leads.length,
-    leadsWithPhone: leadsWithPhone.length,
-    leadsWithCoords: leadsWithCoords.length,
-    leadsWithBoth: leadsWithBoth.length,
-    leadsWithoutPhone: leads.length - leadsWithPhone.length,
-  })
 
   // Tek günlük weekDays
   const weekDays = [{ date: dateStr, type: dayType as 'FIELD' | 'REMOTE' | 'ADMIN' | 'OFF' }]
@@ -272,15 +242,6 @@ async function runDailyDistribution(
     needScore: l.need_score,
     businessName: l.business_name,
   }))
-
-  // DEBUG: Dağıtıma gönderilen veriler
-  const leadsWithPhoneForDist = distributionLeads.filter(l => l.phone !== null)
-  console.log('=== DAĞITIM ÖNCESİ DEBUG ===')
-  console.log('distributionLeads toplam:', distributionLeads.length)
-  console.log('distributionLeads telefon numaralı:', leadsWithPhoneForDist.length)
-  console.log('distributionAgents:', distributionAgents.length)
-  console.log('TELESALES ajanları:', distributionAgents.filter(a => a.role === 'TELESALES_AGENT').length)
-  console.log('weekDays:', weekDays)
 
   // Dağıt
   const result = distributeWeeklyPlan({
@@ -370,25 +331,5 @@ async function runDailyDistribution(
     }
   }
 
-  // Debug bilgileri
-  const leadsWithoutPhoneAndCoords = leads.filter((l) => l.phone === null && l.lat === null)
-  const leadsWithPhoneOnly = leads.filter((l) => l.phone !== null && l.lat === null)
-  const leadsWithCoordsOnly = leads.filter((l) => l.phone === null && l.lat !== null)
-
-  const debug = {
-    totalLeadsInDb: allLeads.length,
-    alreadyAssigned: assignedLeadIds.size,
-    availableLeads: leads.length,
-    leadsWithPhone: leadsWithPhone.length,
-    leadsWithCoords: leadsWithCoords.length,
-    leadsWithBoth: leadsWithBoth.length,
-    leadsWithPhoneOnly: leadsWithPhoneOnly.length,
-    leadsWithCoordsOnly: leadsWithCoordsOnly.length,
-    leadsWithoutPhoneAndCoords: leadsWithoutPhoneAndCoords.length,
-    fieldAgents: distributionAgents.filter(a => a.role === 'FIELD_AGENT').length,
-    telesalesAgents: distributionAgents.filter(a => a.role === 'TELESALES_AGENT').length,
-    assignmentDateDistribution: dateDistribution,
-  }
-
-  return { ...result, debug }
+  return result
 }

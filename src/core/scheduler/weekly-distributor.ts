@@ -173,14 +173,6 @@ export function distributeWeeklyPlan(input: WeeklyDistributionInput): WeeklyDist
   }
 
   // ——— TELESALES Dağıtım ———
-  // DEBUG: Dağıtım öncesi durum
-  console.log('=== TELESALES DAĞITIM DEBUG ===')
-  console.log('telesalesAgents:', telesalesAgents.length)
-  console.log('telesalesDays:', telesalesDays.length, telesalesDays.map(d => d.date))
-  console.log('leadsWithPhone:', leadsWithPhone.length)
-  console.log('usedLeadIds (FIELD tarafından):', usedLeadIds.size)
-  console.log('DAILY_CALL_TARGET:', DAILY_CALL_TARGET)
-
   if (telesalesAgents.length > 0 && telesalesDays.length > 0) {
     for (const day of telesalesDays) {
       let leadIndex = 0
@@ -188,7 +180,6 @@ export function distributeWeeklyPlan(input: WeeklyDistributionInput): WeeklyDist
       for (const agent of telesalesAgents) {
         const agentLeads: LeadForDistribution[] = []
         const dailyLimit = DAILY_CALL_TARGET
-        const startIndex = leadIndex
 
         // Bu ajan için günlük limiti doldur
         while (agentLeads.length < dailyLimit && leadIndex < leadsWithPhone.length) {
@@ -200,8 +191,6 @@ export function distributeWeeklyPlan(input: WeeklyDistributionInput): WeeklyDist
           agentLeads.push(lead)
           usedLeadIds.add(lead.id)
         }
-
-        console.log(`Agent ${agent.id.slice(0,8)}: startIdx=${startIndex}, endIdx=${leadIndex}, assigned=${agentLeads.length}`)
 
         if (agentLeads.length === 0) continue
 
