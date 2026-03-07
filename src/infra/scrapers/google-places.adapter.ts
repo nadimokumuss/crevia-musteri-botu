@@ -12,38 +12,67 @@ import { logger } from '@/lib/logger'
 import { RateLimiter, SCRAPER_RATE_LIMITS } from '@/lib/rate-limiter'
 
 const GOOGLE_TYPE_TO_CATEGORY: Record<string, string> = {
+  // Yeme-İçme
   restaurant: 'Restoran',
   meal_delivery: 'Restoran',
   meal_takeaway: 'Restoran',
   cafe: 'Kafe',
+  bakery: 'Pastane / Fırın',
+
+  // Güzellik & Sağlık
   beauty_salon: 'Güzellik Salonu',
   hair_care: 'Güzellik Salonu',
   spa: 'Güzellik Salonu',
+  hair_salon: 'Berber',
+  barber_shop: 'Berber',
   gym: 'Spor Salonu',
-  lodging: 'Otel',
-  hotel: 'Otel',
-  store: 'Mağaza',
-  clothing_store: 'Mağaza',
-  shopping_mall: 'Mağaza',
+  fitness_center: 'Spor Salonu',
+  yoga_studio: 'Pilates / Yoga Stüdyosu',
+  pilates_studio: 'Pilates / Yoga Stüdyosu',
   doctor: 'Klinik',
   health: 'Klinik',
   hospital: 'Klinik',
-  physiotherapist: 'Klinik',
   dentist: 'Diş Hekimi',
-  lawyer: 'Avukat',
-  real_estate_agency: 'Emlakçı',
+  veterinary_care: 'Veteriner',
   pharmacy: 'Eczane',
   drugstore: 'Eczane',
-  veterinary_care: 'Veteriner',
-  school: 'Eğitim / Kurs Merkezi',
-  university: 'Eğitim / Kurs Merkezi',
+  optician: 'Optik',
+  physiotherapist: 'Fizyoterapi',
+
+  // Konaklama & Eğlence
+  lodging: 'Otel',
+  hotel: 'Otel',
+  wedding_hall: 'Düğün Salonu',
+  event_venue: 'Organizasyon',
+
+  // Perakende
+  store: 'Mağaza',
+  clothing_store: 'Mağaza',
+  shopping_mall: 'Mağaza',
+  pet_store: 'Pet Shop',
+  florist: 'Çiçekçi',
+  furniture_store: 'Mobilyacı',
+  stationery_store: 'Kırtasiye',
+
+  // Otomotiv
   car_wash: 'Oto Yıkama',
   car_repair: 'Oto Servis',
-  bakery: 'Pastane / Fırın',
-  pet_store: 'Pet Shop',
   car_dealer: 'Oto Galeri',
-  furniture_store: 'Mobilyacı',
+
+  // Emlak & İnşaat
+  real_estate_agency: 'Emlakçı',
+  general_contractor: 'Müteahhit / İnşaat',
+
+  // Hizmet
+  photographer: 'Fotoğrafçı',
+  school: 'Eğitim / Kurs Merkezi',
+  university: 'Eğitim / Kurs Merkezi',
+  preschool: 'Kreş',
+  daycare: 'Kreş',
+  moving_company: 'Nakliyat',
   accounting: 'Muhasebeci',
+
+  // NOT: lawyer (Avukat) ve government (Devlet) kategorileri kasıtlı olarak hariç tutuldu
 }
 
 interface PlaceNewResult {

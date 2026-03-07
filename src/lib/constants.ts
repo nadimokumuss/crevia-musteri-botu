@@ -64,31 +64,59 @@ export const ISTANBUL_CENTER = {
 
 /** Sabit sektör/kategori listesi */
 export const CATEGORIES = [
+  // Yeme-İçme
   'Restoran',
   'Kafe',
+  'Pastane / Fırın',
+
+  // Güzellik & Sağlık
   'Güzellik Salonu',
+  'Berber',
   'Spor Salonu',
-  'Otel',
-  'Mağaza',
+  'Pilates / Yoga Stüdyosu',
   'Klinik',
   'Diş Hekimi',
-  'Avukat',
-  'Emlakçı',
-  'Eczane',
   'Veteriner',
-  'Fotoğrafçı',
-  'Eğitim / Kurs Merkezi',
+  'Eczane',
+  'Optik',
+  'Diyetisyen',
+  'Fizyoterapi',
+
+  // Konaklama & Eğlence
+  'Otel',
+  'Düğün Salonu',
+  'Organizasyon',
+
+  // Perakende
+  'Mağaza',
+  'Pet Shop',
+  'Çiçekçi',
+  'Mobilyacı',
+  'Kırtasiye',
+
+  // Otomotiv
   'Oto Yıkama',
   'Oto Servis',
-  'Pastane / Fırın',
-  'Pet Shop',
-  'Optik',
+  'Oto Galeri',
+
+  // Emlak & İnşaat
+  'Emlakçı',
   'Müteahhit / İnşaat',
+  'Mimarlık Ofisi',
+  'İç Mimar',
+
+  // Hizmet
+  'Fotoğrafçı',
+  'Eğitim / Kurs Merkezi',
+  'Kreş',
+  'Temizlik Şirketi',
+  'Nakliyat',
   'Danışmanlık',
   'Muhasebeci',
-  'Berber',
-  'Oto Galeri',
-  'Mobilyacı',
+
+  // Dijital
+  'Dijital Ajans',
+  'E-ticaret',
 ] as const
 
 /** Winx Club peri listesi */
