@@ -32,11 +32,12 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceRoleClient()
 
-    // ig_username'i olmayan lead'leri getir
+    // ig_username'i kontrol edilmemiş lead'leri getir (NULL = kontrol edilmemiş)
     let query = supabase
       .from('leads')
       .select('*')
       .is('ig_username', null)
+      .not('website', 'is', null) // Sadece website olanları kontrol et
       .limit(Math.min(batchLimit, 500)) // Max 500 per request
 
     if (districtId) {
@@ -69,7 +70,15 @@ export async function POST(request: NextRequest) {
     for (const lead of leads as Lead[]) {
       try {
         const profileData = await discoverInstagramProfile(lead, adapter)
-        if (!profileData?.igUsername) continue
+
+        // Instagram bulunamadıysa boş string ile işaretle (tekrar denemeyi önle)
+        if (!profileData?.igUsername) {
+          await supabase
+            .from('leads')
+            .update({ ig_username: '' })
+            .eq('id', lead.id)
+          continue
+        }
 
         // Lead'i Instagram verileriyle güncelle
         const { error: igUpdateError } = await supabase
@@ -138,11 +147,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Kalan lead sayısını hesapla
+    // Kalan lead sayısını hesapla (website olup ig_username kontrol edilmemiş)
     const { count: remainingCount } = await supabase
       .from('leads')
       .select('*', { count: 'exact', head: true })
       .is('ig_username', null)
+      .not('website', 'is', null)
 
     logger.info('Instagram zenginleştirme tamamlandı', { enriched, total: leads.length, remaining: remainingCount })
 
