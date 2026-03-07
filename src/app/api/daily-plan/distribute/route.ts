@@ -156,29 +156,66 @@ async function runDailyDistribution(
     }
   }
 
-  // VERSION CHECK: v2 - limit 10000
-  console.log('=== DISTRIBUTE API VERSION: v2 (limit 10000) ===')
+  // VERSION CHECK: v3 - pagination ile tüm lead'leri çek
+  console.log('=== DISTRIBUTE API VERSION: v3 (pagination) ===')
 
-  // Lead'leri çek (puanlı, aktif) - Supabase varsayılan 1000 limiti var, açıkça yüksek limit ver
-  const { data: leadsData } = await supabase
-    .from('leads')
-    .select('*')
-    .in('status', ['NEW', 'CONTACTED'])
-    .order('need_score', { ascending: false })
-    .limit(10000)
+  // Lead'leri pagination ile çek - Supabase max 1000 satır döndürüyor
+  const allLeads: Lead[] = []
+  const pageSize = 1000
+  let page = 0
+  let hasMore = true
 
-  const allLeads = (leadsData ?? []) as Lead[]
+  while (hasMore) {
+    const { data: pageData, error: pageError } = await supabase
+      .from('leads')
+      .select('*')
+      .in('status', ['NEW', 'CONTACTED'])
+      .order('need_score', { ascending: false })
+      .range(page * pageSize, (page + 1) * pageSize - 1)
+
+    if (pageError) {
+      logger.error('Lead sayfa çekme hatası', { page, error: pageError.message })
+      break
+    }
+
+    if (pageData && pageData.length > 0) {
+      allLeads.push(...(pageData as Lead[]))
+      page++
+      hasMore = pageData.length === pageSize
+    } else {
+      hasMore = false
+    }
+  }
+
+  console.log(`Toplam ${allLeads.length} lead çekildi (${page} sayfa)`)
 
   // Herhangi bir güne atanmış TÜM lead'leri hariç tut (tekrar atama önleme)
-  // Status filtresi YOK - bir lead bir kez atandıysa bir daha atanamaz
-  const { data: existingAssignments, error: assignmentQueryError } = await supabase
-    .from('assignments')
-    .select('lead_id, scheduled_date')
-    .limit(50000)
+  // Assignments'ı da pagination ile çek
+  const existingAssignments: Array<{ lead_id: string; scheduled_date: string }> = []
+  let assignmentPage = 0
+  let hasMoreAssignments = true
 
-  if (assignmentQueryError) {
-    logger.error('Mevcut atamalar sorgulanamadı', { error: assignmentQueryError.message })
+  while (hasMoreAssignments) {
+    const { data: assignmentPageData, error: assignmentPageError } = await supabase
+      .from('assignments')
+      .select('lead_id, scheduled_date')
+      .range(assignmentPage * pageSize, (assignmentPage + 1) * pageSize - 1)
+
+    if (assignmentPageError) {
+      logger.error('Assignment sayfa çekme hatası', { page: assignmentPage, error: assignmentPageError.message })
+      break
+    }
+
+    if (assignmentPageData && assignmentPageData.length > 0) {
+      existingAssignments.push(...assignmentPageData)
+      assignmentPage++
+      hasMoreAssignments = assignmentPageData.length === pageSize
+    } else {
+      hasMoreAssignments = false
+    }
   }
+
+  console.log(`Toplam ${existingAssignments.length} assignment çekildi (${assignmentPage} sayfa)`)
 
   // Debug: Mevcut atamaların tarih dağılımını logla
   const dateDistribution: Record<string, number> = {}
