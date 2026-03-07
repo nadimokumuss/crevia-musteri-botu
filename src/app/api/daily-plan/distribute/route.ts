@@ -156,12 +156,13 @@ async function runDailyDistribution(
     }
   }
 
-  // Lead'leri çek (puanlı, aktif) - TÜM lead'leri al, limit YOK
+  // Lead'leri çek (puanlı, aktif) - Supabase varsayılan 1000 limiti var, açıkça yüksek limit ver
   const { data: leadsData } = await supabase
     .from('leads')
     .select('*')
     .in('status', ['NEW', 'CONTACTED'])
     .order('need_score', { ascending: false })
+    .limit(10000)
 
   const allLeads = (leadsData ?? []) as Lead[]
 
