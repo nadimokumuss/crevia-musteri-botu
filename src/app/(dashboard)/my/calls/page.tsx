@@ -1,0 +1,306 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { NotesDialog } from '@/components/shared/notes-dialog'
+import { PreferencesBanner } from '@/components/shared/preferences-banner'
+import { CallExportButtons } from '@/components/calls/call-export-buttons'
+import type { CallListItem } from '@/types/call'
+
+interface MyCallListData {
+  id: string
+  list_date: string
+  items: CallListItem[]
+  total_items: number
+  completed_items: number
+}
+
+const CALL_OUTCOMES = [
+  { value: 'PENDING', label: 'Bekliyor', className: 'bg-gray-100 text-gray-800' },
+  { value: 'COMPLETED', label: 'Tamamlandı', className: 'bg-green-100 text-green-800' },
+  { value: 'NO_ANSWER', label: 'Cevap Yok', className: 'bg-yellow-100 text-yellow-800' },
+  { value: 'CALLBACK', label: 'Geri Ara', className: 'bg-blue-100 text-blue-800' },
+  { value: 'INTERESTED', label: 'İlgili', className: 'bg-emerald-100 text-emerald-800' },
+  { value: 'NOT_INTERESTED', label: 'İlgili Değil', className: 'bg-red-100 text-red-800' },
+  { value: 'WRONG_NUMBER', label: 'Yanlış Numara', className: 'bg-gray-100 text-gray-800' },
+  { value: 'DEMO', label: 'Deneme Çekimi', className: 'bg-purple-100 text-purple-800' },
+]
+
+export default function MyCallsPage() {
+  const [callList, setCallList] = useState<MyCallListData | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [notesTarget, setNotesTarget] = useState<{ leadId: string; notes: string } | null>(null)
+  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  useEffect(() => {
+    loadCallList()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate])
+
+  async function loadCallList() {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`/api/my/calls?date=${selectedDate}`)
+      if (response.ok) {
+        const data = await response.json() as MyCallListData | null
+        setCallList(data)
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  async function updateCallOutcome(leadId: string, status: string, outcome?: string) {
+    setErrorMsg(null)
+    const prev = callList
+    setCallList((p) => {
+      if (!p) return p
+      const items = p.items.map((item) =>
+        item.leadId === leadId ? { ...item, status: status as CallListItem['status'], outcome } : item
+      )
+      const completedItems = items.filter((i) => i.status !== 'PENDING').length
+      return { ...p, items, completed_items: completedItems }
+    })
+
+    try {
+      const res = await fetch(`/api/my/calls/${leadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, outcome: status === 'PENDING' ? undefined : outcome, date: selectedDate }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        setErrorMsg(`Güncelleme başarısız: ${err.error ?? res.status}`)
+        setCallList(prev)
+      }
+    } catch {
+      setErrorMsg('Sunucuya bağlanılamadı')
+      setCallList(prev)
+    }
+  }
+
+  async function saveNotes(leadId: string, notes: string) {
+    setErrorMsg(null)
+    const prev = callList
+    setCallList((p) => {
+      if (!p) return p
+      const items = p.items.map((item) =>
+        item.leadId === leadId ? { ...item, notes } : item
+      )
+      return { ...p, items }
+    })
+    setNotesTarget(null)
+
+    try {
+      const res = await fetch(`/api/my/calls/${leadId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes, date: selectedDate }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
+        setErrorMsg(`Not kaydedilemedi: ${err.error ?? res.status}`)
+        setCallList(prev)
+      }
+    } catch {
+      setErrorMsg('Sunucuya bağlanılamadı')
+      setCallList(prev)
+    }
+  }
+
+  if (isLoading) {
+    return <div className="py-12 text-center text-muted-foreground">Yükleniyor...</div>
+  }
+
+  const items = callList?.items ?? []
+  const completionRate = callList
+    ? Math.round((callList.completed_items / Math.max(callList.total_items, 1)) * 100)
+    : 0
+
+  return (
+    <div className="space-y-6">
+      <PreferencesBanner />
+
+      {errorMsg && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          {errorMsg}
+          <button className="ml-2 underline" onClick={() => setErrorMsg(null)}>Kapat</button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Telefon Aramalarım</h1>
+          <p className="text-muted-foreground">
+            {callList ? `${callList.list_date} tarihli arama listesi` : 'Seçili tarih için arama listesi yok'}
+          </p>
+        </div>
+        <Input
+          type="date"
+          value={selectedDate}
+          onChange={(e) => setSelectedDate(e.target.value)}
+          className="w-full md:w-44"
+        />
+      </div>
+
+      {callList && (
+        <>
+          <div className="grid gap-4 grid-cols-3">
+            <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{callList.total_items}</div><p className="text-sm text-muted-foreground">Toplam</p></CardContent></Card>
+            <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{callList.completed_items}</div><p className="text-sm text-muted-foreground">Tamamlanan</p></CardContent></Card>
+            <Card><CardContent className="pt-6"><div className="text-2xl font-bold">%{completionRate}</div><p className="text-sm text-muted-foreground">Oran</p></CardContent></Card>
+          </div>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Arama Listesi</CardTitle>
+                <CardDescription>İşlemler sütunundan sonucu değiştirin</CardDescription>
+              </div>
+              <CallExportButtons items={items} listDate={selectedDate} />
+            </CardHeader>
+            <CardContent className="space-y-3 md:space-y-0">
+              {/* Mobil: Kart bazlı */}
+              <div className="md:hidden space-y-3">
+                {items.map((item) => {
+                  const statusInfo = CALL_OUTCOMES.find((o) => o.value === item.status)
+                  return (
+                    <div key={item.leadId} className="rounded-lg border p-3 space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-muted-foreground">{item.order}.</span>
+                            <Link href={`/leads/${item.leadId}`} className="font-medium text-blue-600 hover:underline">
+                              {item.businessName}
+                            </Link>
+                          </div>
+                          <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                            {item.phone ? (
+                              <a href={`tel:${item.phone}`} className="text-blue-600 underline">{item.phone}</a>
+                            ) : null}
+                            <span className="font-bold text-foreground">{item.needScore}p</span>
+                          </div>
+                        </div>
+                        <Badge variant="secondary" className={`shrink-0 ${statusInfo?.className ?? ''}`}>
+                          {statusInfo?.label ?? item.status}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={item.status}
+                          onValueChange={(val) => {
+                            const outcome = CALL_OUTCOMES.find((o) => o.value === val)
+                            if (outcome) updateCallOutcome(item.leadId, outcome.value, outcome.value === 'PENDING' ? undefined : outcome.label)
+                          }}
+                        >
+                          <SelectTrigger className="flex-1">
+                            <SelectValue placeholder="Seçin" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CALL_OUTCOMES.map((o) => (
+                              <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button variant="outline" size="sm" onClick={() => setNotesTarget({ leadId: item.leadId, notes: item.notes ?? '' })}>
+                          Not
+                        </Button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Masaüstü: Tablo */}
+              <div className="hidden md:block">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b text-left text-sm font-medium text-muted-foreground">
+                      <th className="pb-2 w-12">Sıra</th>
+                      <th className="pb-2">İşletme</th>
+                      <th className="pb-2">Telefon</th>
+                      <th className="pb-2 text-center">Puan</th>
+                      <th className="pb-2">Durum</th>
+                      <th className="pb-2">İşlemler</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => {
+                      const statusInfo = CALL_OUTCOMES.find((o) => o.value === item.status)
+                      return (
+                        <tr key={item.leadId} className="border-b">
+                          <td className="py-3 font-bold">{item.order}</td>
+                          <td className="py-3 font-medium">
+                            <Link href={`/leads/${item.leadId}`} className="text-blue-600 hover:underline">{item.businessName}</Link>
+                          </td>
+                          <td className="py-3">
+                            {item.phone ? <a href={`tel:${item.phone}`} className="text-blue-600 underline">{item.phone}</a> : '-'}
+                          </td>
+                          <td className="py-3 text-center font-bold">{item.needScore}</td>
+                          <td className="py-3">
+                            <Badge variant="secondary" className={statusInfo?.className ?? ''}>{statusInfo?.label ?? item.status}</Badge>
+                          </td>
+                          <td className="py-3">
+                            <div className="flex items-center gap-1">
+                              <Select
+                                value={item.status}
+                                onValueChange={(val) => {
+                                  const outcome = CALL_OUTCOMES.find((o) => o.value === val)
+                                  if (outcome) updateCallOutcome(item.leadId, outcome.value, outcome.value === 'PENDING' ? undefined : outcome.label)
+                                }}
+                              >
+                                <SelectTrigger className="w-[150px]"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  {CALL_OUTCOMES.map((o) => (
+                                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Button variant="outline" size="sm" onClick={() => setNotesTarget({ leadId: item.leadId, notes: item.notes ?? '' })}>
+                                Not
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
+      {!callList && !isLoading && (
+        <Card>
+          <CardContent className="py-12">
+            <p className="text-center text-muted-foreground">Seçili tarih için atanmış bir arama listesi bulunmuyor.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {notesTarget && (
+        <NotesDialog
+          open={!!notesTarget}
+          onClose={() => setNotesTarget(null)}
+          onSave={(notes) => saveNotes(notesTarget.leadId, notes)}
+          initialNotes={notesTarget.notes}
+          title="Arama Notu"
+        />
+      )}
+    </div>
+  )
+}
