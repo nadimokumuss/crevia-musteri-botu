@@ -241,6 +241,7 @@ async function runDailyDistribution(
     phone: l.phone,
     needScore: l.need_score,
     businessName: l.business_name,
+    igUsername: l.ig_username,
   }))
 
   // Dağıt

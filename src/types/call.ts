@@ -8,6 +8,7 @@ export interface CallListItem {
   businessName: string
   phone: string | null
   needScore: number
+  igUsername?: string | null
   status: 'PENDING' | 'COMPLETED' | 'NO_ANSWER' | 'CALLBACK' | 'INTERESTED' | 'NOT_INTERESTED' | 'WRONG_NUMBER' | 'DEMO'
   outcome?: string
   notes?: string

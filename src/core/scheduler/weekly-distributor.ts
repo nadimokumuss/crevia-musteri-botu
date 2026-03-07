@@ -42,6 +42,7 @@ export interface LeadForDistribution {
   phone: string | null
   needScore: number
   businessName: string
+  igUsername?: string | null
 }
 
 // ——— Çıkış Tipleri ———
@@ -202,6 +203,7 @@ export function distributeWeeklyPlan(input: WeeklyDistributionInput): WeeklyDist
           order: idx + 1,
           status: 'PENDING' as const,
           needScore: l.needScore,
+          igUsername: l.igUsername,
         }))
 
         callLists.push({
