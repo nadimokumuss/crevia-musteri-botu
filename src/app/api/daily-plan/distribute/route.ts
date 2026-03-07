@@ -171,6 +171,7 @@ async function runDailyDistribution(
   const { data: existingAssignments, error: assignmentQueryError } = await supabase
     .from('assignments')
     .select('lead_id, scheduled_date')
+    .limit(50000)
 
   if (assignmentQueryError) {
     logger.error('Mevcut atamalar sorgulanamadı', { error: assignmentQueryError.message })
