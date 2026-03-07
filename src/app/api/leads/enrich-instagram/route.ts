@@ -14,6 +14,8 @@ import type { Lead } from '@/types/database'
 import type { RawLeadData } from '@/types/lead'
 import type { InstagramSignals } from '@/types/scoring'
 
+export const maxDuration = 300 // 5 dakika timeout
+
 /**
  * Instagram zenginleştirme endpoint'i
  *
@@ -26,6 +28,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const districtId: string | undefined = body.district_id
+    const batchLimit: number = body.limit ?? 50
 
     const supabase = createServiceRoleClient()
 
@@ -34,7 +37,7 @@ export async function POST(request: NextRequest) {
       .from('leads')
       .select('*')
       .is('ig_username', null)
-      .limit(50)
+      .limit(Math.min(batchLimit, 500)) // Max 500 per request
 
     if (districtId) {
       query = query.eq('district_id', districtId)
@@ -135,12 +138,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    logger.info('Instagram zenginleştirme tamamlandı', { enriched, total: leads.length })
+    // Kalan lead sayısını hesapla
+    const { count: remainingCount } = await supabase
+      .from('leads')
+      .select('*', { count: 'exact', head: true })
+      .is('ig_username', null)
+
+    logger.info('Instagram zenginleştirme tamamlandı', { enriched, total: leads.length, remaining: remainingCount })
 
     return NextResponse.json({
       message: 'Instagram zenginleştirme tamamlandı',
       enriched,
-      total: leads.length,
+      processed: leads.length,
+      remaining: remainingCount ?? 0,
     })
   } catch (error) {
     logger.error('Instagram enrich API hatası', { error: String(error) })
