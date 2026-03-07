@@ -231,6 +231,15 @@ async function runDailyDistribution(
     businessName: l.business_name,
   }))
 
+  // DEBUG: Dağıtıma gönderilen veriler
+  const leadsWithPhoneForDist = distributionLeads.filter(l => l.phone !== null)
+  console.log('=== DAĞITIM ÖNCESİ DEBUG ===')
+  console.log('distributionLeads toplam:', distributionLeads.length)
+  console.log('distributionLeads telefon numaralı:', leadsWithPhoneForDist.length)
+  console.log('distributionAgents:', distributionAgents.length)
+  console.log('TELESALES ajanları:', distributionAgents.filter(a => a.role === 'TELESALES_AGENT').length)
+  console.log('weekDays:', weekDays)
+
   // Dağıt
   const result = distributeWeeklyPlan({
     agents: distributionAgents,
