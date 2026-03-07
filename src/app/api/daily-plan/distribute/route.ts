@@ -156,21 +156,21 @@ async function runDailyDistribution(
     }
   }
 
-  // Lead'leri çek (puanlı, aktif)
+  // Lead'leri çek (puanlı, aktif) - yeterli lead olması için limit yüksek
   const { data: leadsData } = await supabase
     .from('leads')
     .select('*')
     .in('status', ['NEW', 'CONTACTED'])
     .order('need_score', { ascending: false })
-    .limit(500)
+    .limit(2000)
 
   const allLeads = (leadsData ?? []) as Lead[]
 
-  // Herhangi bir güne atanmış aktif lead'leri hariç tut (çapraz gün tekrar atama önleme)
+  // Herhangi bir güne atanmış TÜM lead'leri hariç tut (tekrar atama önleme)
+  // Status filtresi YOK - bir lead bir kez atandıysa bir daha atanamaz
   const { data: existingAssignments } = await supabase
     .from('assignments')
     .select('lead_id')
-    .in('status', ['PENDING', 'IN_PROGRESS'])
 
   const assignedLeadIds = new Set(
     (existingAssignments ?? []).map((a) => a.lead_id as string)
