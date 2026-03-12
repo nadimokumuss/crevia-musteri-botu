@@ -186,6 +186,7 @@ export default function AgentsPage() {
     setPrefsTarget(agent)
     setPrefsDistrictIds(prefs?.district_ids ?? [])
     setPrefsCategories(prefs?.categories ?? [])
+    setErrorMessage(null)
     setPrefsDialogOpen(true)
   }
 
@@ -483,10 +484,14 @@ export default function AgentsPage() {
               />
             </div>
 
+            {errorMessage && (
+              <p className="text-sm text-destructive">{errorMessage}</p>
+            )}
+
             <Button
               onClick={savePreferences}
               className="w-full"
-              disabled={isSavingPrefs}
+              disabled={isSavingPrefs || prefsDistrictIds.length === 0}
             >
               {isSavingPrefs ? 'Kaydediliyor...' : 'Kaydet'}
             </Button>
