@@ -85,6 +85,11 @@ export default function AdminPage() {
   const [hasExistingPlan, setHasExistingPlan] = useState(false)
   const [selectedDate, setSelectedDate] = useState('')
 
+  // Instagram zenginleştirme state
+  const [isEnrichingIG, setIsEnrichingIG] = useState(false)
+  const [igEnrichResult, setIgEnrichResult] = useState<{ enriched: number; remaining: number | null } | null>(null)
+  const [igEnrichError, setIgEnrichError] = useState<string | null>(null)
+
   const todayInfo = getTodayInfo()
   const canDistribute = todayInfo.dayType !== 'OFF'
 
@@ -277,6 +282,34 @@ export default function AdminPage() {
     }
   }
 
+  async function handleEnrichInstagram() {
+    setIsEnrichingIG(true)
+    setIgEnrichError(null)
+    setIgEnrichResult(null)
+
+    try {
+      const res = await fetch('/api/leads/enrich-instagram', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ limit: 50 }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setIgEnrichError(err.error ?? 'Instagram zenginleştirme başarısız')
+        return
+      }
+      const data = await res.json()
+      setIgEnrichResult({
+        enriched: data.enriched ?? 0,
+        remaining: data.remaining ?? null,
+      })
+    } catch {
+      setIgEnrichError('Sunucuya bağlanılamadı')
+    } finally {
+      setIsEnrichingIG(false)
+    }
+  }
+
   const scrapeProgress = scrapeStatus
     ? Math.round((scrapeStatus.completedJobs / Math.max(scrapeStatus.totalJobs, 1)) * 100)
     : 0
@@ -464,6 +497,53 @@ export default function AdminPage() {
                   <Badge variant="secondary">{scoreResult.scored} puanlandi</Badge>
                   <Badge variant="outline">{scoreResult.total} toplam</Badge>
                 </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Instagram Zenginleştirme */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Instagram Zenginleştirme</CardTitle>
+            <CardDescription>
+              Instagram hesabı taranmamış lead&apos;leri zenginleştir. Her çalıştırmada en fazla 50 lead işlenir.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Button
+              onClick={handleEnrichInstagram}
+              disabled={isEnrichingIG}
+              className="w-full"
+              variant="secondary"
+            >
+              {isEnrichingIG ? 'Zenginleştiriliyor...' : '📸 Instagram Zenginleştir'}
+            </Button>
+
+            {igEnrichError && (
+              <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
+                {igEnrichError}
+              </div>
+            )}
+
+            {igEnrichResult && (
+              <div className="rounded-md bg-pink-50 p-3 text-sm">
+                <p className="font-medium text-pink-800">Zenginleştirme tamamlandı</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="bg-pink-100 text-pink-800">
+                    {igEnrichResult.enriched} lead zenginleştirildi
+                  </Badge>
+                  {igEnrichResult.remaining !== null && (
+                    <Badge variant="outline">
+                      {igEnrichResult.remaining} lead bekliyor
+                    </Badge>
+                  )}
+                </div>
+                {igEnrichResult.remaining !== null && igEnrichResult.remaining > 0 && (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Kalan lead&apos;ler için butona tekrar basın veya cron job bekleyin.
+                  </p>
+                )}
               </div>
             )}
           </CardContent>
