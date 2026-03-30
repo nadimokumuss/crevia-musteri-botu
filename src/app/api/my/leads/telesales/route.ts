@@ -49,7 +49,8 @@ export async function GET() {
           phone,
           email,
           need_score,
-          recommendation
+          recommendation,
+          ig_username
         )
       `)
       .eq('agent_id', agent.id)
@@ -112,6 +113,7 @@ export async function GET() {
         email: lead.email ?? null,
         need_score: lead.need_score ?? 0,
         recommendation: lead.recommendation ?? null,
+        ig_username: (lead.ig_username as string | null) ?? null,
         scheduled_date: a.scheduled_date as string,
         call_list_date: callInfo?.listDate ?? (a.scheduled_date as string),
         call_status: callInfo?.status ?? 'PENDING',

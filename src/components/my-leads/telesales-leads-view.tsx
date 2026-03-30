@@ -20,6 +20,15 @@ import { CallExportButtons } from '@/components/calls/call-export-buttons'
 import { useCurrentUser } from '@/hooks/use-current-user'
 import type { CallListItem } from '@/types/call'
 
+// Instagram ikonu (SVG)
+function InstagramIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+    </svg>
+  )
+}
+
 interface TelesalesLeadItem {
   id: string
   business_name: string
@@ -28,6 +37,7 @@ interface TelesalesLeadItem {
   email: string | null
   need_score: number
   recommendation: string | null
+  ig_username: string | null
   scheduled_date: string
   call_list_date?: string
   call_status: string
@@ -110,6 +120,7 @@ export function TelesalesLeadsView() {
       businessName: lead.business_name,
       phone: lead.phone,
       needScore: lead.need_score,
+      igUsername: lead.ig_username ?? undefined,
       status: (lead.call_status || 'PENDING') as CallListItem['status'],
       outcome: lead.call_outcome ?? undefined,
       notes: lead.call_notes ?? undefined,
@@ -263,6 +274,17 @@ export function TelesalesLeadsView() {
                           {lead.phone ? (
                             <a href={`tel:${lead.phone}`} className="text-blue-600 underline">{lead.phone}</a>
                           ) : null}
+                          {lead.ig_username && (
+                            <a
+                              href={`https://instagram.com/${lead.ig_username}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-pink-600 hover:text-pink-700"
+                              title={`@${lead.ig_username}`}
+                            >
+                              <InstagramIcon className="h-4 w-4" />
+                            </a>
+                          )}
                           {lead.category ? <span>{lead.category}</span> : null}
                           <span className="font-bold text-foreground">{lead.need_score}p</span>
                         </div>
@@ -314,6 +336,7 @@ export function TelesalesLeadsView() {
                   <th className="pb-2">İşletme</th>
                   <th className="pb-2">Kategori</th>
                   <th className="pb-2">Telefon</th>
+                  <th className="pb-2 text-center">IG</th>
                   <th className="pb-2 text-center">Puan</th>
                   <th className="pb-2">Durum</th>
                   <th className="pb-2">İşlemler</th>
@@ -322,7 +345,7 @@ export function TelesalesLeadsView() {
               <tbody>
                 {filteredLeads.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 text-center text-muted-foreground">
+                    <td colSpan={7} className="py-8 text-center text-muted-foreground">
                       {isLoading ? 'Yükleniyor...' : 'Bu kategoride müşteri bulunamadı'}
                     </td>
                   </tr>
@@ -341,6 +364,21 @@ export function TelesalesLeadsView() {
                           {lead.phone ? (
                             <a href={`tel:${lead.phone}`} className="text-blue-600 underline">{lead.phone}</a>
                           ) : '-'}
+                        </td>
+                        <td className="py-3 text-center">
+                          {lead.ig_username ? (
+                            <a
+                              href={`https://instagram.com/${lead.ig_username}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center justify-center text-pink-600 hover:text-pink-700"
+                              title={`@${lead.ig_username}`}
+                            >
+                              <InstagramIcon className="h-5 w-5" />
+                            </a>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
                         </td>
                         <td className="py-3 text-center font-bold">{lead.need_score}</td>
                         <td className="py-3">
