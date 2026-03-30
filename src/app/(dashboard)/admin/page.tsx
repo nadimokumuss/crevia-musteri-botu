@@ -291,7 +291,7 @@ export default function AdminPage() {
       const res = await fetch('/api/leads/enrich-instagram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 50 }),
+        body: JSON.stringify({ limit: 5 }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -328,7 +328,7 @@ export default function AdminPage() {
             <span>📸</span> Instagram Zenginleştirme
           </CardTitle>
           <CardDescription>
-            Instagram hesabı taranmamış lead&apos;leri zenginleştir. Her çalıştırmada en fazla 50 lead işlenir.
+              Instagram hesabı taranmamış lead&apos;leri zenginleştir. Her çalıştırmada 5 lead işlenir, birden fazla kez çalıştırabilirsiniz.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
