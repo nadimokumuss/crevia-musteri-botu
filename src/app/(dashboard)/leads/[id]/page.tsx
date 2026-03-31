@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ActivityTimeline } from '@/components/leads/activity-timeline'
+import { INSTAGRAM_DISCOVERY_SOURCE_LABELS } from '@/lib/instagram-source'
 import type { Lead } from '@/types/database'
 
 export default function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -182,6 +183,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
                   <span className="text-sm text-muted-foreground">-</span>
                 )}
               </div>
+              <InfoRow
+                label="Bulunma Kaynağı"
+                value={lead.ig_discovery_source ? INSTAGRAM_DISCOVERY_SOURCE_LABELS[lead.ig_discovery_source] : null}
+              />
               <InfoRow label="Takipçi" value={lead.ig_follower_count?.toString()} />
               <InfoRow label="Gönderi Sayısı" value={lead.ig_post_count?.toString()} />
               <InfoRow label="Ort. Beğeni" value={lead.ig_avg_likes?.toString()} />

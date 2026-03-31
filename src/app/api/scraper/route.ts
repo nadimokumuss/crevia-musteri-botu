@@ -3,14 +3,14 @@ import { startScrapeJobSchema } from '@/lib/validators'
 import { createServiceRoleClient } from '@/infra/supabase/server'
 import { createLeadSource } from '@/infra/scrapers/scraper-factory'
 import { InstagramAdapter } from '@/infra/scrapers/instagram.adapter'
+import {
+  buildInstagramLeadUpdate,
+  buildInstagramSeedUpdateFromWebsite,
+  discoverOrBackfillInstagramProfileForLead,
+  needsInstagramProfileBackfill,
+} from '@/infra/instagram/discovery'
 import { calculateNeedScore } from '@/core/scoring/need-score'
 import { logger } from '@/lib/logger'
-import {
-  extractInstagramFromUrl,
-  extractInstagramFromHtml,
-  guessInstagramCandidates,
-  extractWebsiteDomain,
-} from '@/lib/instagram-utils'
 import { buildAllSignals } from '@/lib/signal-builders'
 import type { ScrapeJobStatus, Lead } from '@/types/database'
 
@@ -157,9 +157,10 @@ async function runScrapeJob(
     for (const lead of result.leads) {
       // Mevcut lead'i kontrol et (google_place_id veya ig_username ile)
       if (lead.googlePlaceId) {
+        const instagramSeed = buildInstagramSeedUpdateFromWebsite(lead.website)
         const { data: existing } = await supabase
           .from('leads')
-          .select('id')
+          .select('id, ig_username')
           .eq('google_place_id', lead.googlePlaceId)
           .single()
 
@@ -179,6 +180,7 @@ async function runScrapeJob(
               google_review_count: lead.googleReviewCount,
               google_photo_count: lead.googlePhotoCount,
               google_is_claimed: lead.googleIsClaimed,
+              ...((!existing.ig_username || existing.ig_username === '') && instagramSeed ? instagramSeed : {}),
             })
             .eq('id', existing.id)
           affectedLeadIds.push(existing.id)
@@ -199,6 +201,7 @@ async function runScrapeJob(
             google_review_count: lead.googleReviewCount,
             google_photo_count: lead.googlePhotoCount,
             google_is_claimed: lead.googleIsClaimed,
+            ...(instagramSeed ?? {}),
           }).select('id').single()
           if (inserted) affectedLeadIds.push(inserted.id)
           leadsNew++
@@ -246,6 +249,7 @@ async function runScrapeJob(
           leadsNew++
         }
       } else {
+        const instagramSeed = buildInstagramSeedUpdateFromWebsite(lead.website)
         const { data: inserted } = await supabase.from('leads').insert({
           district_id: districtId,
           business_name: lead.businessName,
@@ -256,6 +260,7 @@ async function runScrapeJob(
           website: lead.website,
           lat: lead.lat,
           lng: lead.lng,
+          ...(instagramSeed ?? {}),
         }).select('id').single()
         if (inserted) affectedLeadIds.push(inserted.id)
         leadsNew++
@@ -333,31 +338,24 @@ async function autoEnrichInstagram(
       .from('leads')
       .select('*')
       .in('id', leadIds)
-      .is('ig_username', null)
 
     if (!leads || leads.length === 0) return
 
     let enriched = 0
 
     for (const lead of leads as Lead[]) {
+      const shouldProcess = !lead.ig_username || needsInstagramProfileBackfill(lead)
+      if (!shouldProcess) {
+        continue
+      }
+
       try {
-        const profileData = await discoverInstagramProfile(lead, adapter)
-        if (!profileData) continue
+        const discovery = await discoverOrBackfillInstagramProfileForLead(lead, adapter)
+        if (!discovery) continue
 
         await supabase
           .from('leads')
-          .update({
-            ig_username: profileData.igUsername,
-            ig_follower_count: profileData.igFollowerCount,
-            ig_post_count: profileData.igPostCount,
-            ig_avg_likes: profileData.igAvgLikes,
-            ig_last_post_date: profileData.igLastPostDate,
-            ig_has_highlights: profileData.igHasHighlights,
-            ig_bio_contains_agency: profileData.igBioContainsAgency,
-            ig_has_bio_link: profileData.igHasBioLink,
-            ig_engagement_rate: profileData.igEngagementRate,
-            ig_posting_regularity: profileData.igPostingRegularity,
-          })
+          .update(buildInstagramLeadUpdate(discovery))
           .eq('id', lead.id)
 
         enriched++
@@ -373,51 +371,6 @@ async function autoEnrichInstagram(
   } catch (error) {
     logger.warn('Otomatik Instagram zenginleştirme hatası', { error: String(error) })
   }
-}
-
-/**
- * 3 katmanlı Instagram profil bulma
- */
-async function discoverInstagramProfile(
-  lead: Lead,
-  adapter: InstagramAdapter
-): Promise<Partial<import('@/types/lead').RawLeadData> | null> {
-  // Katman 1: Website URL'si doğrudan Instagram linki mi?
-  if (lead.website) {
-    const directUsername = extractInstagramFromUrl(lead.website)
-    if (directUsername) {
-      const profileData = await adapter.analyzeProfile(directUsername)
-      if (profileData.igUsername) return profileData
-    }
-  }
-
-  // Katman 2: Website HTML'inden Instagram linki çıkar
-  if (lead.website && !extractInstagramFromUrl(lead.website ?? '')) {
-    try {
-      const url = lead.website.startsWith('http') ? lead.website : `https://${lead.website}`
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(5000),
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CreviaSalesBot/1.0)' },
-      })
-      if (response.ok) {
-        const html = await response.text()
-        const htmlUsername = extractInstagramFromHtml(html)
-        if (htmlUsername) {
-          const profileData = await adapter.analyzeProfile(htmlUsername)
-          if (profileData.igUsername) return profileData
-        }
-      }
-    } catch {
-      // Website erişim hatası, Katman 3'e geç
-    }
-  }
-
-  // Katman 3: Aday üretimi + Apify doğrulama
-  const candidates = guessInstagramCandidates(lead)
-  if (candidates.length === 0) return null
-
-  const context = { websiteDomain: extractWebsiteDomain(lead.website) }
-  return adapter.findBusinessProfile(candidates, lead.business_name, context)
 }
 
 /**

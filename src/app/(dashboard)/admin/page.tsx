@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select'
 import { CATEGORIES } from '@/lib/constants'
 import { formatLongDateInIstanbul, getTodayDateInIstanbul, parseIstanbulDate } from '@/lib/date-utils'
+import { INSTAGRAM_DISCOVERY_SOURCE_LABELS } from '@/lib/instagram-source'
 import type { Agent, District, ScrapeJob } from '@/types/database'
 
 type ScrapeSource = 'google-places' | 'apify' | 'instagram'
@@ -87,6 +88,11 @@ export default function AdminPage() {
     processed: number
     unmatched: number
     remaining: number | null
+    sources: {
+      website_url: number
+      website_html: number
+      candidate_verified: number
+    }
   } | null>(null)
 
   const todayDate = getTodayDateInIstanbul()
@@ -288,6 +294,11 @@ export default function AdminPage() {
         processed: data.processed ?? 0,
         unmatched: data.unmatched ?? 0,
         remaining: data.remaining ?? null,
+        sources: {
+          website_url: data.sources?.website_url ?? 0,
+          website_html: data.sources?.website_html ?? 0,
+          candidate_verified: data.sources?.candidate_verified ?? 0,
+        },
       })
     } catch {
       setInstagramError('Sunucuya bağlanılamadı')
@@ -566,7 +577,7 @@ export default function AdminPage() {
           <CardHeader>
             <CardTitle>Instagram Zenginleştirme</CardTitle>
             <CardDescription>
-              Instagram verisi eksik veya daha once bulunamamis kayitlari yeniden dener.
+              Google profilindeki website alanı zaten Instagram olan kayıtları önce işler, sonra website ve aday doğrulama fallback&apos;ine geçer.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -595,6 +606,21 @@ export default function AdminPage() {
                   <Badge variant="outline">{instagramResult.enriched} hesap bulundu</Badge>
                   {instagramResult.unmatched > 0 && (
                     <Badge variant="outline">{instagramResult.unmatched} kayitta hesap bulunamadi</Badge>
+                  )}
+                  {instagramResult.sources.website_url > 0 && (
+                    <Badge variant="outline">
+                      {instagramResult.sources.website_url} {INSTAGRAM_DISCOVERY_SOURCE_LABELS.WEBSITE_URL}
+                    </Badge>
+                  )}
+                  {instagramResult.sources.website_html > 0 && (
+                    <Badge variant="outline">
+                      {instagramResult.sources.website_html} {INSTAGRAM_DISCOVERY_SOURCE_LABELS.WEBSITE_HTML}
+                    </Badge>
+                  )}
+                  {instagramResult.sources.candidate_verified > 0 && (
+                    <Badge variant="outline">
+                      {instagramResult.sources.candidate_verified} {INSTAGRAM_DISCOVERY_SOURCE_LABELS.CANDIDATE_VERIFIED}
+                    </Badge>
                   )}
                   {instagramResult.remaining !== null && (
                     <Badge variant="outline">{instagramResult.remaining} kayıt bekliyor</Badge>

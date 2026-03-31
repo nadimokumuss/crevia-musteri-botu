@@ -8,6 +8,7 @@
 export type AgentRole = 'ADMIN' | 'FIELD_AGENT' | 'TELESALES_AGENT'
 export type LeadStatus = 'NEW' | 'CONTACTED' | 'QUALIFIED' | 'PROPOSAL' | 'WON' | 'LOST' | 'SKIP'
 export type LeadRecommendation = 'HIGH_PRIORITY' | 'MEDIUM' | 'LOW_PRIORITY' | 'SKIP'
+export type InstagramDiscoverySource = 'WEBSITE_URL' | 'WEBSITE_HTML' | 'CANDIDATE_VERIFIED' | 'MANUAL'
 export type AssignmentType = 'VISIT' | 'CALL'
 export type AssignmentStatus = 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'NO_SHOW'
 export type ScrapeJobStatus = 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED'
@@ -58,6 +59,7 @@ export interface Lead {
   google_last_updated: string | null
   google_response_rate: number | null
   ig_username: string | null
+  ig_discovery_source: InstagramDiscoverySource | null
   ig_follower_count: number | null
   ig_post_count: number | null
   ig_avg_likes: number | null

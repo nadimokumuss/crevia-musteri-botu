@@ -136,6 +136,7 @@ CREATE TABLE leads (
     google_is_claimed BOOLEAN,
     google_last_updated TIMESTAMPTZ,
     ig_username TEXT,
+    ig_discovery_source TEXT CHECK (ig_discovery_source IN ('WEBSITE_URL', 'WEBSITE_HTML', 'CANDIDATE_VERIFIED', 'MANUAL')),
     ig_follower_count INTEGER,
     ig_post_count INTEGER,
     ig_avg_likes DOUBLE PRECISION,
