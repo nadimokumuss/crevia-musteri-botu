@@ -1,5 +1,6 @@
 import { createServiceRoleClient } from '@/infra/supabase/server'
 import type { Lead } from '@/types/database'
+import { isInstagramDiscoverySourceSchemaError } from './schema-fallback'
 
 type SupabaseClient = ReturnType<typeof createServiceRoleClient>
 
@@ -123,6 +124,9 @@ async function queryPendingInstagramLeads(
   }
 
   const { data, error } = await query
+  if (error && isInstagramDiscoverySourceSchemaError(error)) {
+    return { leads: [], error: null }
+  }
   return { leads: (data as Lead[] | null) ?? [], error }
 }
 
@@ -148,6 +152,9 @@ async function queryProfileBackfillLeads(
   }
 
   const { data, error } = await query
+  if (error && isInstagramDiscoverySourceSchemaError(error)) {
+    return { leads: [], error: null }
+  }
   return { leads: (data as Lead[] | null) ?? [], error }
 }
 
@@ -169,6 +176,9 @@ async function countProfileBackfillLeads(
     query = query.eq('district_id', districtId)
   }
 
-  const { count } = await query
+  const { count, error } = await query
+  if (error && isInstagramDiscoverySourceSchemaError(error)) {
+    return 0
+  }
   return count ?? 0
 }

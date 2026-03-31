@@ -5,6 +5,7 @@ import type { Lead } from '@/types/database'
 import type { InstagramSignals } from '@/types/scoring'
 import { buildInstagramLeadUpdate, discoverOrBackfillInstagramProfileForLead, needsInstagramProfileBackfill } from './discovery'
 import { countPendingInstagramLeads, loadPendingInstagramLeads } from './pending-leads'
+import { updateLeadWithInstagramSchemaFallback } from './schema-fallback'
 import { InstagramAdapter } from '../scrapers/instagram.adapter'
 
 type SupabaseClient = ReturnType<typeof createServiceRoleClient>
@@ -100,10 +101,10 @@ export async function runInstagramEnrichment(
 
       if (!discovery?.username) {
         if (!hadUsername) {
-          await supabase
-            .from('leads')
-            .update({ ig_username: '', ig_discovery_source: null })
-            .eq('id', lead.id)
+          await updateLeadWithInstagramSchemaFallback(supabase, lead.id, {
+            ig_username: '',
+            ig_discovery_source: null,
+          })
 
           unmatched++
         }
@@ -111,14 +112,7 @@ export async function runInstagramEnrichment(
       }
 
       const instagramUpdate = buildInstagramLeadUpdate(discovery)
-      const { error: updateError } = await supabase
-        .from('leads')
-        .update(instagramUpdate)
-        .eq('id', lead.id)
-
-      if (updateError) {
-        throw new Error(updateError.message)
-      }
+      await updateLeadWithInstagramSchemaFallback(supabase, lead.id, instagramUpdate)
 
       const scoredLead = applyInstagramUpdateToLead(lead, instagramUpdate)
       const google = buildGoogleSignals(scoredLead)
