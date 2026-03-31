@@ -60,6 +60,7 @@ export async function runInstagramEnrichment(
   let backfilled = 0
   let unmatched = 0
   let failed = 0
+  const attemptedLeadIds = new Set<string>()
   const matches: EnrichedInstagramMatch[] = []
   const sources = {
     website_url: 0,
@@ -91,19 +92,28 @@ export async function runInstagramEnrichment(
       break
     }
 
-    for (const lead of leads) {
+    const nextLeads = leads.filter((lead) => !attemptedLeadIds.has(lead.id))
+
+    if (nextLeads.length === 0) {
+      break
+    }
+
+    for (const lead of nextLeads) {
       if (processed >= maxLeads || Date.now() >= deadline) {
         break
       }
 
+      attemptedLeadIds.add(lead.id)
+      processed++
+
+      const hadUsername = Boolean(lead.ig_username)
+      const wasBackfillLead = needsInstagramProfileBackfill(lead)
+      let persistedInstagramUpdate = false
+
       try {
-        const hadUsername = Boolean(lead.ig_username)
-        const wasBackfillLead = needsInstagramProfileBackfill(lead)
         const discovery = await discoverOrBackfillInstagramProfileForLead(lead, adapter, {
           websiteFetchTimeoutMs: options.websiteFetchTimeoutMs,
         })
-
-        processed++
 
         if (!discovery?.username) {
           if (!hadUsername) {
@@ -112,6 +122,7 @@ export async function runInstagramEnrichment(
               ig_discovery_source: null,
             })
 
+            persistedInstagramUpdate = true
             unmatched++
           }
           continue
@@ -119,6 +130,7 @@ export async function runInstagramEnrichment(
 
         const instagramUpdate = buildInstagramLeadUpdate(discovery)
         await updateLeadWithInstagramSchemaFallback(supabase, lead.id, instagramUpdate)
+        persistedInstagramUpdate = true
 
         const scoredLead = applyInstagramUpdateToLead(lead, instagramUpdate)
         const google = buildGoogleSignals(scoredLead)
@@ -164,6 +176,22 @@ export async function runInstagramEnrichment(
         }
       } catch (error) {
         failed++
+
+        if (!hadUsername && !persistedInstagramUpdate) {
+          try {
+            await updateLeadWithInstagramSchemaFallback(supabase, lead.id, {
+              ig_username: '',
+              ig_discovery_source: null,
+            })
+          } catch (markRetryError) {
+            logger.warn('Instagram retry kaydi yazilamadi', {
+              leadId: lead.id,
+              businessName: lead.business_name,
+              error: String(markRetryError),
+            })
+          }
+        }
+
         logger.warn('Instagram zenginlestirme lead hatasi', {
           leadId: lead.id,
           businessName: lead.business_name,
@@ -172,7 +200,7 @@ export async function runInstagramEnrichment(
       }
     }
 
-    if (leads.length < remainingSlots) {
+    if (nextLeads.length < remainingSlots) {
       break
     }
   }
