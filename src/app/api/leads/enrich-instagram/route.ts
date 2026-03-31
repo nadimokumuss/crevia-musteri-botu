@@ -32,19 +32,8 @@ export async function POST(request: NextRequest) {
 
     const supabase = createServiceRoleClient()
 
-    // ig_username'i kontrol edilmemiş lead'leri getir (NULL = kontrol edilmemiş)
-    let query = supabase
-      .from('leads')
-      .select('*')
-      .is('ig_username', null)
-      .not('website', 'is', null) // Sadece website olanları kontrol et
-      .limit(Math.min(batchLimit, 500)) // Max 500 per request
-
-    if (districtId) {
-      query = query.eq('district_id', districtId)
-    }
-
-    const { data: leads, error } = await query
+    const limit = Math.min(batchLimit, 500)
+    const { leads, error } = await loadPendingInstagramLeads(supabase, districtId, limit)
 
     if (error) {
       logger.error('Instagram zenginleştirme: lead\'ler getirilemedi', { error: error.message })
@@ -52,7 +41,13 @@ export async function POST(request: NextRequest) {
     }
 
     if (!leads || leads.length === 0) {
-      return NextResponse.json({ message: 'Zenginleştirilecek lead bulunamadı', enriched: 0 })
+      return NextResponse.json({
+        message: 'Zenginleştirilecek veya yeniden denenecek lead bulunamadı',
+        enriched: 0,
+        processed: 0,
+        unmatched: 0,
+        remaining: 0,
+      })
     }
 
     const adapter = new InstagramAdapter()
@@ -147,25 +142,98 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Kalan lead sayısını hesapla (website olup ig_username kontrol edilmemiş)
-    const { count: remainingCount } = await supabase
-      .from('leads')
-      .select('*', { count: 'exact', head: true })
-      .is('ig_username', null)
-      .not('website', 'is', null)
+    const remainingCount = await countPendingInstagramLeads(supabase, districtId)
+    const processed = leads.length
+    const unmatched = processed - enriched
 
     logger.info('Instagram zenginleştirme tamamlandı', { enriched, total: leads.length, remaining: remainingCount })
 
     return NextResponse.json({
       message: 'Instagram zenginleştirme tamamlandı',
       enriched,
-      processed: leads.length,
-      remaining: remainingCount ?? 0,
+      processed,
+      unmatched,
+      remaining: remainingCount,
     })
   } catch (error) {
     logger.error('Instagram enrich API hatası', { error: String(error) })
     return NextResponse.json({ error: 'Sunucu hatası' }, { status: 500 })
   }
+}
+
+async function loadPendingInstagramLeads(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  districtId: string | undefined,
+  limit: number
+) {
+  let freshQuery = supabase
+    .from('leads')
+    .select('*')
+    .is('ig_username', null)
+    .order('updated_at', { ascending: true })
+    .limit(limit)
+
+  if (districtId) {
+    freshQuery = freshQuery.eq('district_id', districtId)
+  }
+
+  const { data: freshLeads, error: freshError } = await freshQuery
+
+  if (freshError) {
+    return { leads: null, error: freshError }
+  }
+
+  const leads = [...(freshLeads ?? [])]
+
+  if (leads.length >= limit) {
+    return { leads, error: null }
+  }
+
+  let retryQuery = supabase
+    .from('leads')
+    .select('*')
+    .eq('ig_username', '')
+    .order('updated_at', { ascending: true })
+    .limit(limit - leads.length)
+
+  if (districtId) {
+    retryQuery = retryQuery.eq('district_id', districtId)
+  }
+
+  const { data: retryLeads, error: retryError } = await retryQuery
+
+  if (retryError) {
+    return { leads: null, error: retryError }
+  }
+
+  return { leads: [...leads, ...(retryLeads ?? [])], error: null }
+}
+
+async function countPendingInstagramLeads(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  districtId: string | undefined
+) {
+  let nullCountQuery = supabase
+    .from('leads')
+    .select('*', { count: 'exact', head: true })
+    .is('ig_username', null)
+
+  let emptyCountQuery = supabase
+    .from('leads')
+    .select('*', { count: 'exact', head: true })
+    .eq('ig_username', '')
+
+  if (districtId) {
+    nullCountQuery = nullCountQuery.eq('district_id', districtId)
+    emptyCountQuery = emptyCountQuery.eq('district_id', districtId)
+  }
+
+  const [{ count: nullCount }, { count: emptyCount }] = await Promise.all([
+    nullCountQuery,
+    emptyCountQuery,
+  ])
+
+  return (nullCount ?? 0) + (emptyCount ?? 0)
 }
 
 /**

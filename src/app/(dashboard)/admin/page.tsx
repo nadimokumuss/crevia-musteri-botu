@@ -82,7 +82,12 @@ export default function AdminPage() {
 
   const [isEnrichingInstagram, setIsEnrichingInstagram] = useState(false)
   const [instagramError, setInstagramError] = useState<string | null>(null)
-  const [instagramResult, setInstagramResult] = useState<{ enriched: number; remaining: number | null } | null>(null)
+  const [instagramResult, setInstagramResult] = useState<{
+    enriched: number
+    processed: number
+    unmatched: number
+    remaining: number | null
+  } | null>(null)
 
   const todayDate = getTodayDateInIstanbul()
   const dayType = getDayType(parseIstanbulDate(todayDate))
@@ -280,6 +285,8 @@ export default function AdminPage() {
 
       setInstagramResult({
         enriched: data.enriched ?? 0,
+        processed: data.processed ?? 0,
+        unmatched: data.unmatched ?? 0,
         remaining: data.remaining ?? null,
       })
     } catch {
@@ -559,7 +566,7 @@ export default function AdminPage() {
           <CardHeader>
             <CardTitle>Instagram Zenginleştirme</CardTitle>
             <CardDescription>
-              Instagram verisi eksik leadlerden sıradaki 5 kaydı tamamlar.
+              Instagram verisi eksik veya daha once bulunamamis kayitlari yeniden dener.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -583,8 +590,12 @@ export default function AdminPage() {
                 <p className="font-medium">İşlem tamamlandı</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Badge variant="secondary" className="bg-pink-100 text-pink-800">
-                    {instagramResult.enriched} kayıt işlendi
+                    {instagramResult.processed} kayıt denendi
                   </Badge>
+                  <Badge variant="outline">{instagramResult.enriched} hesap bulundu</Badge>
+                  {instagramResult.unmatched > 0 && (
+                    <Badge variant="outline">{instagramResult.unmatched} kayitta hesap bulunamadi</Badge>
+                  )}
                   {instagramResult.remaining !== null && (
                     <Badge variant="outline">{instagramResult.remaining} kayıt bekliyor</Badge>
                   )}
