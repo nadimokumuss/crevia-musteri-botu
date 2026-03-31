@@ -58,30 +58,8 @@ interface InstagramEnrichmentState {
   matches: EnrichedInstagramMatch[]
 }
 
-type InstagramRunMode = 'standard' | 'aggressive'
-
-const INSTAGRAM_RUN_CONFIG: Record<
-  InstagramRunMode,
-  {
-    batchSize: number
-    maxBatches: number
-    label: string
-    hint: string
-  }
-> = {
-  standard: {
-    batchSize: 5,
-    maxBatches: 40,
-    label: 'Standart',
-    hint: 'Daha güvenli ilerler, tek tıkta orta ölçekli kuyruk işler.',
-  },
-  aggressive: {
-    batchSize: 12,
-    maxBatches: 80,
-    label: 'Agresif',
-    hint: 'Tek tıkta daha fazla yeni hesap işler. Sekmeyi açık bırakın.',
-  },
-}
+const INSTAGRAM_BATCH_SIZE = 5
+const INSTAGRAM_MAX_BATCHES = 40
 
 const DAY_TYPE_LABELS: Record<string, string> = {
   REMOTE: 'Arama Günü',
@@ -133,7 +111,6 @@ export default function AdminPage() {
   const [isEnrichingInstagram, setIsEnrichingInstagram] = useState(false)
   const [instagramError, setInstagramError] = useState<string | null>(null)
   const [instagramResult, setInstagramResult] = useState<InstagramEnrichmentState | null>(null)
-  const [instagramRunMode, setInstagramRunMode] = useState<InstagramRunMode>('standard')
 
   const todayDate = getTodayDateInIstanbul()
   const dayType = getDayType(parseIstanbulDate(todayDate))
@@ -312,8 +289,6 @@ export default function AdminPage() {
   }
 
   async function handleEnrichInstagram() {
-    const runConfig = INSTAGRAM_RUN_CONFIG[instagramRunMode]
-
     setIsEnrichingInstagram(true)
     setInstagramError(null)
     setInstagramResult({
@@ -351,11 +326,11 @@ export default function AdminPage() {
         matches: [],
       }
 
-      for (let batch = 0; batch < runConfig.maxBatches; batch++) {
+      for (let batch = 0; batch < INSTAGRAM_MAX_BATCHES; batch++) {
         const response = await fetch('/api/leads/enrich-instagram', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ limit: runConfig.batchSize }),
+          body: JSON.stringify({ limit: INSTAGRAM_BATCH_SIZE }),
         })
         const data = await response.json().catch(() => ({}))
 
@@ -685,37 +660,13 @@ export default function AdminPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Calisma modu</label>
-              <Select
-                value={instagramRunMode}
-                onValueChange={(value) => setInstagramRunMode(value as InstagramRunMode)}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.entries(INSTAGRAM_RUN_CONFIG).map(([value, config]) => (
-                    <SelectItem key={value} value={value}>
-                      {config.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {INSTAGRAM_RUN_CONFIG[instagramRunMode].hint}
-              </p>
-            </div>
-
             <Button
               onClick={handleEnrichInstagram}
               disabled={isEnrichingInstagram}
               className="w-full"
               variant="secondary"
             >
-              {isEnrichingInstagram
-                ? `${INSTAGRAM_RUN_CONFIG[instagramRunMode].label} mod calisiyor...`
-                : 'Instagram Kuyruğunu İşle'}
+              {isEnrichingInstagram ? 'Kuyruk işleniyor...' : 'Instagram Kuyruğunu İşle'}
             </Button>
 
             {instagramError && (
@@ -728,7 +679,7 @@ export default function AdminPage() {
               <div className="rounded-md bg-pink-50 p-3 text-sm text-pink-800">
                 <p className="font-medium">
                   {isEnrichingInstagram
-                    ? `${INSTAGRAM_RUN_CONFIG[instagramRunMode].label} mod calisiyor · ${instagramResult.batches} batch tamamlandı`
+                    ? `Kuyruk işleniyor · ${instagramResult.batches} batch tamamlandı`
                     : instagramResult.completedAll
                       ? 'Kuyruk tamamlandı'
                       : 'İşlem tamamlandı, kalan kayıtlar gunluk cron ile sürecek'}
