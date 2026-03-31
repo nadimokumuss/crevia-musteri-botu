@@ -41,6 +41,26 @@ interface EnrichedInstagramMatch {
   source: 'WEBSITE_URL' | 'WEBSITE_HTML' | 'CANDIDATE_VERIFIED'
 }
 
+interface InstagramEnrichmentState {
+  enriched: number
+  processed: number
+  backfilled: number
+  unmatched: number
+  failed: number
+  remaining: number | null
+  completedAll: boolean
+  batches: number
+  sources: {
+    website_url: number
+    website_html: number
+    candidate_verified: number
+  }
+  matches: EnrichedInstagramMatch[]
+}
+
+const INSTAGRAM_BATCH_SIZE = 5
+const INSTAGRAM_MAX_BATCHES = 40
+
 const DAY_TYPE_LABELS: Record<string, string> = {
   REMOTE: 'Arama Günü',
   OFF: 'Tatil',
@@ -90,20 +110,7 @@ export default function AdminPage() {
 
   const [isEnrichingInstagram, setIsEnrichingInstagram] = useState(false)
   const [instagramError, setInstagramError] = useState<string | null>(null)
-  const [instagramResult, setInstagramResult] = useState<{
-    enriched: number
-    processed: number
-    backfilled: number
-    unmatched: number
-    remaining: number | null
-    completedAll: boolean
-    sources: {
-      website_url: number
-      website_html: number
-      candidate_verified: number
-    }
-    matches: EnrichedInstagramMatch[]
-  } | null>(null)
+  const [instagramResult, setInstagramResult] = useState<InstagramEnrichmentState | null>(null)
 
   const todayDate = getTodayDateInIstanbul()
   const dayType = getDayType(parseIstanbulDate(todayDate))
@@ -284,42 +291,94 @@ export default function AdminPage() {
   async function handleEnrichInstagram() {
     setIsEnrichingInstagram(true)
     setInstagramError(null)
-    setInstagramResult(null)
+    setInstagramResult({
+      enriched: 0,
+      processed: 0,
+      backfilled: 0,
+      unmatched: 0,
+      failed: 0,
+      remaining: null,
+      completedAll: false,
+      batches: 0,
+      sources: {
+        website_url: 0,
+        website_html: 0,
+        candidate_verified: 0,
+      },
+      matches: [],
+    })
 
     try {
-      const response = await fetch('/api/leads/enrich-instagram', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      })
-      const data = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        setInstagramError(data.error ?? 'Instagram zenginleştirme başarısız')
-        return
+      let aggregate: InstagramEnrichmentState = {
+        enriched: 0,
+        processed: 0,
+        backfilled: 0,
+        unmatched: 0,
+        failed: 0,
+        remaining: null,
+        completedAll: false,
+        batches: 0,
+        sources: {
+          website_url: 0,
+          website_html: 0,
+          candidate_verified: 0,
+        },
+        matches: [],
       }
 
-      setInstagramResult({
-        enriched: data.enriched ?? 0,
-        processed: data.processed ?? 0,
-        backfilled: data.backfilled ?? 0,
-        unmatched: data.unmatched ?? 0,
-        remaining: data.remaining ?? null,
-        completedAll: data.completedAll ?? false,
-        sources: {
-          website_url: data.sources?.website_url ?? 0,
-          website_html: data.sources?.website_html ?? 0,
-          candidate_verified: data.sources?.candidate_verified ?? 0,
-        },
-        matches: Array.isArray(data.matches)
+      for (let batch = 0; batch < INSTAGRAM_MAX_BATCHES; batch++) {
+        const response = await fetch('/api/leads/enrich-instagram', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ limit: INSTAGRAM_BATCH_SIZE }),
+        })
+        const data = await response.json().catch(() => ({}))
+
+        if (!response.ok) {
+          setInstagramError(data.error ?? 'Instagram zenginleştirme başarısız')
+          return
+        }
+
+        const nextMatches = Array.isArray(data.matches)
           ? data.matches.map((match: EnrichedInstagramMatch) => ({
               id: String(match.id),
               businessName: String(match.businessName),
               username: String(match.username),
               source: match.source,
             }))
-          : [],
-      })
+          : []
+
+        const matchMap = new Map<string, EnrichedInstagramMatch>()
+        for (const match of aggregate.matches) {
+          matchMap.set(match.id, match)
+        }
+        for (const match of nextMatches) {
+          matchMap.set(match.id, match)
+        }
+
+        aggregate = {
+          enriched: aggregate.enriched + (data.enriched ?? 0),
+          processed: aggregate.processed + (data.processed ?? 0),
+          backfilled: aggregate.backfilled + (data.backfilled ?? 0),
+          unmatched: aggregate.unmatched + (data.unmatched ?? 0),
+          failed: aggregate.failed + (data.failed ?? 0),
+          remaining: data.remaining ?? aggregate.remaining,
+          completedAll: data.completedAll ?? false,
+          batches: batch + 1,
+          sources: {
+            website_url: aggregate.sources.website_url + (data.sources?.website_url ?? 0),
+            website_html: aggregate.sources.website_html + (data.sources?.website_html ?? 0),
+            candidate_verified: aggregate.sources.candidate_verified + (data.sources?.candidate_verified ?? 0),
+          },
+          matches: Array.from(matchMap.values()),
+        }
+
+        setInstagramResult(aggregate)
+
+        if (data.completedAll === true || (data.processed ?? 0) === 0) {
+          break
+        }
+      }
     } catch {
       setInstagramError('Sunucuya bağlanılamadı')
     } finally {
@@ -619,7 +678,11 @@ export default function AdminPage() {
             {instagramResult && (
               <div className="rounded-md bg-pink-50 p-3 text-sm text-pink-800">
                 <p className="font-medium">
-                  {instagramResult.completedAll ? 'Kuyruk tamamlandı' : 'İşlem tamamlandı, kalan kayıtlar gunluk cron ile sürecek'}
+                  {isEnrichingInstagram
+                    ? `Kuyruk işleniyor · ${instagramResult.batches} batch tamamlandı`
+                    : instagramResult.completedAll
+                      ? 'Kuyruk tamamlandı'
+                      : 'İşlem tamamlandı, kalan kayıtlar gunluk cron ile sürecek'}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Badge variant="secondary" className="bg-pink-100 text-pink-800">
@@ -631,6 +694,9 @@ export default function AdminPage() {
                   )}
                   {instagramResult.unmatched > 0 && (
                     <Badge variant="outline">{instagramResult.unmatched} kayitta hesap bulunamadi</Badge>
+                  )}
+                  {instagramResult.failed > 0 && (
+                    <Badge variant="outline">{instagramResult.failed} kayıt atlandı</Badge>
                   )}
                   {instagramResult.sources.website_url > 0 && (
                     <Badge variant="outline">

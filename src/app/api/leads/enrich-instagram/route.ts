@@ -25,7 +25,10 @@ export async function POST(request: NextRequest) {
       typeof body.limit === 'number' && Number.isFinite(body.limit) ? body.limit : undefined
 
     const supabase = createServiceRoleClient()
-    const pendingCount = await countPendingInstagramLeads(supabase, districtId, { includeBackfill: false })
+    const pendingCount = await countPendingInstagramLeads(supabase, districtId, {
+      includeBackfill: false,
+      includeRetries: false,
+    })
 
     if (pendingCount === 0) {
       return NextResponse.json({
@@ -61,6 +64,7 @@ export async function POST(request: NextRequest) {
       maxLeads: batchLimit ? Math.min(batchLimit, 500) : undefined,
       timeBudgetMs: 270_000,
       includeBackfill: false,
+      includeRetries: false,
     })
 
     logger.info('Instagram zenginleştirme tamamlandı', {

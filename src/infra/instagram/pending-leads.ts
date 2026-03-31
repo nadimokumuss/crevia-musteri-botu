@@ -6,6 +6,7 @@ type SupabaseClient = ReturnType<typeof createServiceRoleClient>
 
 interface PendingInstagramLeadOptions {
   includeBackfill?: boolean
+  includeRetries?: boolean
 }
 
 export async function loadPendingInstagramLeads(
@@ -16,10 +17,13 @@ export async function loadPendingInstagramLeads(
 ) {
   const buckets = [
     queryPendingInstagramLeads(supabase, districtId, limit, { fresh: true, directOnly: true }),
-    queryPendingInstagramLeads(supabase, districtId, limit, { fresh: false, directOnly: true }),
     queryPendingInstagramLeads(supabase, districtId, limit, { fresh: true, directOnly: false }),
-    queryPendingInstagramLeads(supabase, districtId, limit, { fresh: false, directOnly: false }),
   ]
+
+  if (options.includeRetries !== false) {
+    buckets.splice(1, 0, queryPendingInstagramLeads(supabase, districtId, limit, { fresh: false, directOnly: true }))
+    buckets.push(queryPendingInstagramLeads(supabase, districtId, limit, { fresh: false, directOnly: false }))
+  }
 
   if (options.includeBackfill !== false) {
     buckets.splice(2, 0, queryProfileBackfillLeads(supabase, districtId, limit))
@@ -98,7 +102,9 @@ export async function countPendingInstagramLeads(
     backfillCountPromise,
   ])
 
-  return (nullCount ?? 0) + (emptyCount ?? 0) + backfillResult
+  const effectiveEmptyCount = options.includeRetries !== false ? (emptyCount ?? 0) : 0
+
+  return (nullCount ?? 0) + effectiveEmptyCount + backfillResult
 }
 
 async function queryPendingInstagramLeads(

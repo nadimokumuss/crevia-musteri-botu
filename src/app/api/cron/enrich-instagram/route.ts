@@ -24,7 +24,10 @@ export async function GET(request: NextRequest) {
 
   try {
     const supabase = createServiceRoleClient()
-    const pendingCount = await countPendingInstagramLeads(supabase, undefined, { includeBackfill: true })
+    const pendingCount = await countPendingInstagramLeads(supabase, undefined, {
+      includeBackfill: true,
+      includeRetries: true,
+    })
 
     if (pendingCount === 0) {
       return NextResponse.json({ message: 'İşlenecek Instagram kaydı yok', enriched: 0 })
@@ -41,6 +44,7 @@ export async function GET(request: NextRequest) {
       batchSize: 25,
       timeBudgetMs: 250_000,
       includeBackfill: true,
+      includeRetries: true,
       websiteFetchTimeoutMs: 3000,
     })
 

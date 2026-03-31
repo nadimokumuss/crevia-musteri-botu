@@ -40,6 +40,7 @@ interface InstagramEnrichmentOptions {
   maxLeads?: number
   timeBudgetMs?: number
   includeBackfill?: boolean
+  includeRetries?: boolean
   websiteFetchTimeoutMs?: number
 }
 
@@ -52,6 +53,7 @@ export async function runInstagramEnrichment(
   const maxLeads = options.maxLeads ?? Number.POSITIVE_INFINITY
   const deadline = Date.now() + (options.timeBudgetMs ?? 270_000)
   const includeBackfill = options.includeBackfill !== false
+  const includeRetries = options.includeRetries !== false
 
   let processed = 0
   let enriched = 0
@@ -78,7 +80,7 @@ export async function runInstagramEnrichment(
       supabase,
       options.districtId,
       remainingSlots,
-      { includeBackfill }
+      { includeBackfill, includeRetries }
     )
 
     if (error) {
@@ -175,7 +177,10 @@ export async function runInstagramEnrichment(
     }
   }
 
-  const remaining = await countPendingInstagramLeads(supabase, options.districtId, { includeBackfill })
+  const remaining = await countPendingInstagramLeads(supabase, options.districtId, {
+    includeBackfill,
+    includeRetries,
+  })
 
   return {
     processed,
