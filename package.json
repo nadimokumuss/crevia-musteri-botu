@@ -9,7 +9,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "deploy:vercel": "node scripts/trigger-vercel-deploy.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.47.0",

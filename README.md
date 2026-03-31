@@ -137,6 +137,21 @@ npm run lint
 npm run test
 ```
 
+Deploy hook ile deploy tetikleme:
+
+1. Vercel proje ayarlarindan `Deploy Hooks` altinda `main` branch icin bir hook olustur.
+2. Hook URL'ini yerel `.env.local` dosyasina ekle:
+
+```bash
+VERCEL_DEPLOY_HOOK_URL=https://api.vercel.com/v1/integrations/deploy/...
+```
+
+3. Terminalden deploy'u tetikle:
+
+```bash
+npm run deploy:vercel
+```
+
 ## Operasyon Notlari
 
 - Varsayilan ajan rolu `TELESALES_AGENT` olarak ayarlanmistir.
