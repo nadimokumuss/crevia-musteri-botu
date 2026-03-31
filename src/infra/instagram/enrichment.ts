@@ -1,5 +1,6 @@
 import { calculateNeedScore } from '@/core/scoring/need-score'
 import { createServiceRoleClient } from '@/infra/supabase/server'
+import { logger } from '@/lib/logger'
 import { buildGoogleSignals, buildMarketingSignals, buildWebsiteSignals } from '@/lib/signal-builders'
 import type { Lead } from '@/types/database'
 import type { InstagramSignals } from '@/types/scoring'
@@ -22,6 +23,7 @@ export interface InstagramEnrichmentSummary {
   enriched: number
   backfilled: number
   unmatched: number
+  failed: number
   remaining: number
   completedAll: boolean
   sources: {
@@ -55,6 +57,7 @@ export async function runInstagramEnrichment(
   let enriched = 0
   let backfilled = 0
   let unmatched = 0
+  let failed = 0
   const matches: EnrichedInstagramMatch[] = []
   const sources = {
     website_url: 0,
@@ -91,70 +94,79 @@ export async function runInstagramEnrichment(
         break
       }
 
-      const hadUsername = Boolean(lead.ig_username)
-      const wasBackfillLead = needsInstagramProfileBackfill(lead)
-      const discovery = await discoverOrBackfillInstagramProfileForLead(lead, adapter, {
-        websiteFetchTimeoutMs: options.websiteFetchTimeoutMs,
-      })
+      try {
+        const hadUsername = Boolean(lead.ig_username)
+        const wasBackfillLead = needsInstagramProfileBackfill(lead)
+        const discovery = await discoverOrBackfillInstagramProfileForLead(lead, adapter, {
+          websiteFetchTimeoutMs: options.websiteFetchTimeoutMs,
+        })
 
-      processed++
+        processed++
 
-      if (!discovery?.username) {
+        if (!discovery?.username) {
+          if (!hadUsername) {
+            await updateLeadWithInstagramSchemaFallback(supabase, lead.id, {
+              ig_username: '',
+              ig_discovery_source: null,
+            })
+
+            unmatched++
+          }
+          continue
+        }
+
+        const instagramUpdate = buildInstagramLeadUpdate(discovery)
+        await updateLeadWithInstagramSchemaFallback(supabase, lead.id, instagramUpdate)
+
+        const scoredLead = applyInstagramUpdateToLead(lead, instagramUpdate)
+        const google = buildGoogleSignals(scoredLead)
+        const instagram = buildInstagramSignalsFromLead(scoredLead)
+        const website = buildWebsiteSignals(scoredLead)
+        const marketing = buildMarketingSignals(scoredLead)
+        const score = calculateNeedScore({ google, instagram, website, marketing })
+
+        const { error: scoreUpdateError } = await supabase
+          .from('leads')
+          .update({
+            need_score: score.totalScore,
+            google_sub_score: score.googleSubScore,
+            instagram_sub_score: score.instagramSubScore,
+            website_sub_score: score.websiteSubScore,
+            marketing_sub_score: score.marketingSubScore,
+            recommendation: score.recommendation,
+          })
+          .eq('id', lead.id)
+
+        if (scoreUpdateError) {
+          throw new Error(scoreUpdateError.message)
+        }
+
         if (!hadUsername) {
-          await updateLeadWithInstagramSchemaFallback(supabase, lead.id, {
-            ig_username: '',
-            ig_discovery_source: null,
+          enriched++
+          matches.push({
+            id: lead.id,
+            businessName: lead.business_name,
+            username: discovery.username,
+            source: discovery.source,
           })
 
-          unmatched++
+          if (discovery.source === 'WEBSITE_URL') {
+            sources.website_url++
+          } else if (discovery.source === 'WEBSITE_HTML') {
+            sources.website_html++
+          } else {
+            sources.candidate_verified++
+          }
+        } else if (wasBackfillLead) {
+          backfilled++
         }
-        continue
-      }
-
-      const instagramUpdate = buildInstagramLeadUpdate(discovery)
-      await updateLeadWithInstagramSchemaFallback(supabase, lead.id, instagramUpdate)
-
-      const scoredLead = applyInstagramUpdateToLead(lead, instagramUpdate)
-      const google = buildGoogleSignals(scoredLead)
-      const instagram = buildInstagramSignalsFromLead(scoredLead)
-      const website = buildWebsiteSignals(scoredLead)
-      const marketing = buildMarketingSignals(scoredLead)
-      const score = calculateNeedScore({ google, instagram, website, marketing })
-
-      const { error: scoreUpdateError } = await supabase
-        .from('leads')
-        .update({
-          need_score: score.totalScore,
-          google_sub_score: score.googleSubScore,
-          instagram_sub_score: score.instagramSubScore,
-          website_sub_score: score.websiteSubScore,
-          marketing_sub_score: score.marketingSubScore,
-          recommendation: score.recommendation,
-        })
-        .eq('id', lead.id)
-
-      if (scoreUpdateError) {
-        throw new Error(scoreUpdateError.message)
-      }
-
-      if (!hadUsername) {
-        enriched++
-        matches.push({
-          id: lead.id,
+      } catch (error) {
+        failed++
+        logger.warn('Instagram zenginlestirme lead hatasi', {
+          leadId: lead.id,
           businessName: lead.business_name,
-          username: discovery.username,
-          source: discovery.source,
+          error: String(error),
         })
-
-        if (discovery.source === 'WEBSITE_URL') {
-          sources.website_url++
-        } else if (discovery.source === 'WEBSITE_HTML') {
-          sources.website_html++
-        } else {
-          sources.candidate_verified++
-        }
-      } else if (wasBackfillLead) {
-        backfilled++
       }
     }
 
@@ -170,6 +182,7 @@ export async function runInstagramEnrichment(
     enriched,
     backfilled,
     unmatched,
+    failed,
     remaining,
     completedAll: remaining === 0,
     sources,
