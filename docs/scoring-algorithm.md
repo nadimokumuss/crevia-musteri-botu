@@ -88,7 +88,7 @@ Esik degerleri (`src/lib/constants.ts`):
 3. Apify Instagram profil scraper ile profil verisi cekilir
 4. Basarili eslesmeler leads tablosunda guncellenir
 5. Puan yeniden hesaplanir (Instagram verileri artik mevcut)
-6. Website veya HTML uzerinden direkt bulunan kullanici adlari gerekiyorsa sonraki cron calisinda profil detay backfill'ine girer
+6. Website veya HTML uzerinden direkt bulunan kullanici adlari gerekiyorsa sonraki gunluk cron calisinda profil detay backfill'ine girer
 
 Bir lead'in Instagram hesabi bulunursa, instagram_sub_score 15'ten (hesap yok bonusu) dusebilir — bu IG'si iyi olan isletmelerin puanini dusurur (ajans hizmetine ihtiyaclari daha az).
 

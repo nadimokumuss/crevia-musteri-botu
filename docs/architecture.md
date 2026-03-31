@@ -131,7 +131,7 @@ Legacy veri yapilari.
 - `GET /api/my/calls`
 - `PATCH /api/my/calls/[lead_id]`
 - `POST /api/leads/score`
-- `POST /api/leads/enrich-instagram` manuel kesif kuyrugunu bosaltir
+- `POST /api/leads/enrich-instagram` manuel kesif kuyrugunu bosaltir; kalan profil detaylari gunluk cron ile tamamlanir
 - `GET /api/agents`
 - `PUT /api/agents/preferences`
 

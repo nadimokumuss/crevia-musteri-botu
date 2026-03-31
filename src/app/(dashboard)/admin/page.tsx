@@ -597,7 +597,7 @@ export default function AdminPage() {
           <CardHeader>
             <CardTitle>Instagram Zenginleştirme</CardTitle>
             <CardDescription>
-              Tek seferde tum yeni Instagram kesif kuyrugunu isler. Sure yetmezse kalan kayitlari Vercel cron otomatik tamamlar.
+              Tek seferde tum yeni Instagram kesif kuyrugunu isler. Hobby planda kalan profil detaylari gunluk Vercel cron ile tamamlanir.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -619,7 +619,7 @@ export default function AdminPage() {
             {instagramResult && (
               <div className="rounded-md bg-pink-50 p-3 text-sm text-pink-800">
                 <p className="font-medium">
-                  {instagramResult.completedAll ? 'Kuyruk tamamlandı' : 'İşlem tamamlandı, kalan kayıtlar cron ile sürecek'}
+                  {instagramResult.completedAll ? 'Kuyruk tamamlandı' : 'İşlem tamamlandı, kalan kayıtlar gunluk cron ile sürecek'}
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Badge variant="secondary" className="bg-pink-100 text-pink-800">

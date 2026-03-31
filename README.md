@@ -142,5 +142,5 @@ npm run test
 - Varsayilan ajan rolu `TELESALES_AGENT` olarak ayarlanmistir.
 - Telefonu olmayan lead'ler arama listesine girmez.
 - Mevcut bir ajan/tarih listesi uzerine sessiz overwrite yapilmaz.
-- Instagram kesif kuyrugu admin ekranindan tek tikla calistirilabilir; kalan detay backfill'i Vercel cron her 30 dakikada bir tamamlar.
+- Instagram kesif kuyrugu admin ekranindan tek tikla calistirilabilir; kalan detay backfill'i Hobby plan uyumlu gunluk Vercel cron ile tamamlanir.
 - Saha modulu ileride geri acilabilir; kodu repoda tutulur ama aktif akista kullanilmaz.
