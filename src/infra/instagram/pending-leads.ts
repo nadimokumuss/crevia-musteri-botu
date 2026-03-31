@@ -3,20 +3,30 @@ import type { Lead } from '@/types/database'
 
 type SupabaseClient = ReturnType<typeof createServiceRoleClient>
 
+interface PendingInstagramLeadOptions {
+  includeBackfill?: boolean
+}
+
 export async function loadPendingInstagramLeads(
   supabase: SupabaseClient,
   districtId: string | undefined,
-  limit: number
+  limit: number,
+  options: PendingInstagramLeadOptions = {}
 ) {
-  const buckets = await Promise.all([
+  const buckets = [
     queryPendingInstagramLeads(supabase, districtId, limit, { fresh: true, directOnly: true }),
     queryPendingInstagramLeads(supabase, districtId, limit, { fresh: false, directOnly: true }),
-    queryProfileBackfillLeads(supabase, districtId, limit),
     queryPendingInstagramLeads(supabase, districtId, limit, { fresh: true, directOnly: false }),
     queryPendingInstagramLeads(supabase, districtId, limit, { fresh: false, directOnly: false }),
-  ])
+  ]
 
-  const failedBucket = buckets.find((bucket) => bucket.error)
+  if (options.includeBackfill !== false) {
+    buckets.splice(2, 0, queryProfileBackfillLeads(supabase, districtId, limit))
+  }
+
+  const bucketResults = await Promise.all(buckets)
+
+  const failedBucket = bucketResults.find((bucket) => bucket.error)
   if (failedBucket?.error) {
     return { leads: null, error: failedBucket.error }
   }
@@ -24,7 +34,7 @@ export async function loadPendingInstagramLeads(
   const leads: Lead[] = []
   const seen = new Set<string>()
 
-  for (const bucket of buckets) {
+  for (const bucket of bucketResults) {
     for (const lead of bucket.leads ?? []) {
       if (seen.has(lead.id)) {
         continue
@@ -44,9 +54,10 @@ export async function loadPendingInstagramLeads(
 
 export async function loadNextPendingInstagramLead(
   supabase: SupabaseClient,
-  districtId?: string
+  districtId?: string,
+  options: PendingInstagramLeadOptions = {}
 ) {
-  const { leads, error } = await loadPendingInstagramLeads(supabase, districtId, 1)
+  const { leads, error } = await loadPendingInstagramLeads(supabase, districtId, 1, options)
 
   if (error) {
     return { lead: null, error }
@@ -57,7 +68,8 @@ export async function loadNextPendingInstagramLead(
 
 export async function countPendingInstagramLeads(
   supabase: SupabaseClient,
-  districtId: string | undefined
+  districtId: string | undefined,
+  options: PendingInstagramLeadOptions = {}
 ) {
   let nullCountQuery = supabase
     .from('leads')
@@ -69,29 +81,23 @@ export async function countPendingInstagramLeads(
     .select('*', { count: 'exact', head: true })
     .eq('ig_username', '')
 
-  let backfillCountQuery = supabase
-    .from('leads')
-    .select('*', { count: 'exact', head: true })
-    .not('ig_username', 'is', null)
-    .neq('ig_username', '')
-    .in('ig_discovery_source', ['WEBSITE_URL', 'WEBSITE_HTML'])
-    .is('ig_follower_count', null)
-    .is('ig_post_count', null)
-    .is('ig_last_post_date', null)
-
   if (districtId) {
     nullCountQuery = nullCountQuery.eq('district_id', districtId)
     emptyCountQuery = emptyCountQuery.eq('district_id', districtId)
-    backfillCountQuery = backfillCountQuery.eq('district_id', districtId)
   }
 
-  const [{ count: nullCount }, { count: emptyCount }, { count: backfillCount }] = await Promise.all([
+  const backfillCountPromise =
+    options.includeBackfill !== false
+      ? countProfileBackfillLeads(supabase, districtId)
+      : Promise.resolve(0)
+
+  const [{ count: nullCount }, { count: emptyCount }, backfillResult] = await Promise.all([
     nullCountQuery,
     emptyCountQuery,
-    backfillCountQuery,
+    backfillCountPromise,
   ])
 
-  return (nullCount ?? 0) + (emptyCount ?? 0) + (backfillCount ?? 0)
+  return (nullCount ?? 0) + (emptyCount ?? 0) + backfillResult
 }
 
 async function queryPendingInstagramLeads(
@@ -143,4 +149,26 @@ async function queryProfileBackfillLeads(
 
   const { data, error } = await query
   return { leads: (data as Lead[] | null) ?? [], error }
+}
+
+async function countProfileBackfillLeads(
+  supabase: SupabaseClient,
+  districtId: string | undefined
+) {
+  let query = supabase
+    .from('leads')
+    .select('*', { count: 'exact', head: true })
+    .not('ig_username', 'is', null)
+    .neq('ig_username', '')
+    .in('ig_discovery_source', ['WEBSITE_URL', 'WEBSITE_HTML'])
+    .is('ig_follower_count', null)
+    .is('ig_post_count', null)
+    .is('ig_last_post_date', null)
+
+  if (districtId) {
+    query = query.eq('district_id', districtId)
+  }
+
+  const { count } = await query
+  return count ?? 0
 }

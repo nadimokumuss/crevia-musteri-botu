@@ -34,6 +34,13 @@ interface ManualCallListSummary {
   preferencesApplied?: boolean
 }
 
+interface EnrichedInstagramMatch {
+  id: string
+  businessName: string
+  username: string
+  source: 'WEBSITE_URL' | 'WEBSITE_HTML' | 'CANDIDATE_VERIFIED'
+}
+
 const DAY_TYPE_LABELS: Record<string, string> = {
   REMOTE: 'Arama Günü',
   OFF: 'Tatil',
@@ -86,13 +93,16 @@ export default function AdminPage() {
   const [instagramResult, setInstagramResult] = useState<{
     enriched: number
     processed: number
+    backfilled: number
     unmatched: number
     remaining: number | null
+    completedAll: boolean
     sources: {
       website_url: number
       website_html: number
       candidate_verified: number
     }
+    matches: EnrichedInstagramMatch[]
   } | null>(null)
 
   const todayDate = getTodayDateInIstanbul()
@@ -280,7 +290,7 @@ export default function AdminPage() {
       const response = await fetch('/api/leads/enrich-instagram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ limit: 5 }),
+        body: JSON.stringify({}),
       })
       const data = await response.json().catch(() => ({}))
 
@@ -292,13 +302,23 @@ export default function AdminPage() {
       setInstagramResult({
         enriched: data.enriched ?? 0,
         processed: data.processed ?? 0,
+        backfilled: data.backfilled ?? 0,
         unmatched: data.unmatched ?? 0,
         remaining: data.remaining ?? null,
+        completedAll: data.completedAll ?? false,
         sources: {
           website_url: data.sources?.website_url ?? 0,
           website_html: data.sources?.website_html ?? 0,
           candidate_verified: data.sources?.candidate_verified ?? 0,
         },
+        matches: Array.isArray(data.matches)
+          ? data.matches.map((match: EnrichedInstagramMatch) => ({
+              id: String(match.id),
+              businessName: String(match.businessName),
+              username: String(match.username),
+              source: match.source,
+            }))
+          : [],
       })
     } catch {
       setInstagramError('Sunucuya bağlanılamadı')
@@ -577,7 +597,7 @@ export default function AdminPage() {
           <CardHeader>
             <CardTitle>Instagram Zenginleştirme</CardTitle>
             <CardDescription>
-              Google profilindeki website alanı zaten Instagram olan kayıtları önce işler, sonra website ve aday doğrulama fallback&apos;ine geçer.
+              Tek seferde tum yeni Instagram kesif kuyrugunu isler. Sure yetmezse kalan kayitlari Vercel cron otomatik tamamlar.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -587,7 +607,7 @@ export default function AdminPage() {
               className="w-full"
               variant="secondary"
             >
-              {isEnrichingInstagram ? 'Zenginleştiriliyor...' : 'Instagram Verisini Çek'}
+              {isEnrichingInstagram ? 'Kuyruk işleniyor...' : 'Instagram Kuyruğunu İşle'}
             </Button>
 
             {instagramError && (
@@ -598,12 +618,17 @@ export default function AdminPage() {
 
             {instagramResult && (
               <div className="rounded-md bg-pink-50 p-3 text-sm text-pink-800">
-                <p className="font-medium">İşlem tamamlandı</p>
+                <p className="font-medium">
+                  {instagramResult.completedAll ? 'Kuyruk tamamlandı' : 'İşlem tamamlandı, kalan kayıtlar cron ile sürecek'}
+                </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Badge variant="secondary" className="bg-pink-100 text-pink-800">
                     {instagramResult.processed} kayıt denendi
                   </Badge>
                   <Badge variant="outline">{instagramResult.enriched} hesap bulundu</Badge>
+                  {instagramResult.backfilled > 0 && (
+                    <Badge variant="outline">{instagramResult.backfilled} profil detayı güncellendi</Badge>
+                  )}
                   {instagramResult.unmatched > 0 && (
                     <Badge variant="outline">{instagramResult.unmatched} kayitta hesap bulunamadi</Badge>
                   )}
@@ -626,6 +651,37 @@ export default function AdminPage() {
                     <Badge variant="outline">{instagramResult.remaining} kayıt bekliyor</Badge>
                   )}
                 </div>
+
+                {instagramResult.matches.length > 0 && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs font-medium uppercase tracking-wide text-pink-700">
+                      Bulunan İşletmeler
+                    </p>
+                    <div className="space-y-2">
+                      {instagramResult.matches.map((match) => (
+                        <div
+                          key={match.id}
+                          className="flex flex-col gap-1 rounded-md border border-pink-200 bg-white/70 px-3 py-2 md:flex-row md:items-center md:justify-between"
+                        >
+                          <div>
+                            <p className="font-medium text-slate-900">{match.businessName}</p>
+                            <p className="text-xs text-slate-600">
+                              {INSTAGRAM_DISCOVERY_SOURCE_LABELS[match.source]}
+                            </p>
+                          </div>
+                          <a
+                            href={`https://instagram.com/${match.username}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sm font-medium text-pink-700 hover:underline"
+                          >
+                            @{match.username}
+                          </a>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>

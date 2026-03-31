@@ -107,7 +107,7 @@ Detay: [docs/scoring-algorithm.md](docs/scoring-algorithm.md)
 - `GET /api/my/calls` — ajanin kendi listesi
 - `PATCH /api/my/calls/[lead_id]` — arama sonucu guncelle
 - `POST /api/leads/score` — toplu puanlama
-- `POST /api/leads/enrich-instagram` — kademeli IG zenginlestirme
+- `POST /api/leads/enrich-instagram` — IG kesif kuyrugunu tek seferde isle
 
 ## Pasif Legacy Yuzeyler
 
@@ -142,4 +142,5 @@ npm run test
 - Varsayilan ajan rolu `TELESALES_AGENT` olarak ayarlanmistir.
 - Telefonu olmayan lead'ler arama listesine girmez.
 - Mevcut bir ajan/tarih listesi uzerine sessiz overwrite yapilmaz.
+- Instagram kesif kuyrugu admin ekranindan tek tikla calistirilabilir; kalan detay backfill'i Vercel cron her 30 dakikada bir tamamlar.
 - Saha modulu ileride geri acilabilir; kodu repoda tutulur ama aktif akista kullanilmaz.

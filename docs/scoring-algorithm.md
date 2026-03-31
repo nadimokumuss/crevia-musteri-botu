@@ -81,13 +81,14 @@ Esik degerleri (`src/lib/constants.ts`):
 
 `POST /api/leads/enrich-instagram` endpoint'i ile calisan mekanizma:
 
-1. ig_username'i olmayan leadler secilir (maks 50)
+1. ig_username'i olmayan leadler secilir ve kuyruk bitene kadar batch halinde islenir
 2. Her lead icin Instagram kullanici adi tahmin edilir:
    - Oncelik 1: Website URL'sinden domain adi (orn: `kafeistanbul.com` → `kafeistanbul`)
    - Oncelik 2: Isletme adindan (Turkce karakter donusumu ile, orn: `Guzellik Salonu Ece` → `guzelliksalonuece`)
 3. Apify Instagram profil scraper ile profil verisi cekilir
 4. Basarili eslesmeler leads tablosunda guncellenir
 5. Puan yeniden hesaplanir (Instagram verileri artik mevcut)
+6. Website veya HTML uzerinden direkt bulunan kullanici adlari gerekiyorsa sonraki cron calisinda profil detay backfill'ine girer
 
 Bir lead'in Instagram hesabi bulunursa, instagram_sub_score 15'ten (hesap yok bonusu) dusebilir — bu IG'si iyi olan isletmelerin puanini dusurur (ajans hizmetine ihtiyaclari daha az).
 

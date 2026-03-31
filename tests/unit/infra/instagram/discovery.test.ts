@@ -96,10 +96,6 @@ describe('instagram discovery helpers', () => {
 
   it('website HTML icindeki Instagram linkini kullanir', async () => {
     const adapter = createAdapter()
-    adapter.analyzeProfile.mockResolvedValueOnce({
-      igUsername: 'modacafe',
-      igFollowerCount: 4800,
-    })
     mockFetch.mockResolvedValueOnce({
       ok: true,
       text: async () => '<a href="https://instagram.com/modacafe">Instagram</a>',
@@ -112,7 +108,8 @@ describe('instagram discovery helpers', () => {
 
     expect(result?.source).toBe('WEBSITE_HTML')
     expect(result?.username).toBe('modacafe')
-    expect(adapter.analyzeProfile).toHaveBeenCalledWith('modacafe')
+    expect(result?.profileData.igUsername).toBe('modacafe')
+    expect(adapter.analyzeProfile).not.toHaveBeenCalled()
   })
 
   it('tahmin + dogrulama fallbackini kullanir', async () => {

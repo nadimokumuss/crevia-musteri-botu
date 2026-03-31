@@ -73,11 +73,10 @@ export async function discoverInstagramProfileForLead(
   if (lead.website) {
     const directUsername = extractInstagramFromUrl(lead.website)
     if (directUsername) {
-      const profileData = await analyzeInstagramUsername(adapter, directUsername)
       return {
         username: directUsername,
         source: 'WEBSITE_URL',
-        profileData,
+        profileData: { igUsername: directUsername },
       }
     }
   }
@@ -95,11 +94,10 @@ export async function discoverInstagramProfileForLead(
         const htmlUsername = extractInstagramFromHtml(html)
 
         if (htmlUsername) {
-          const profileData = await analyzeInstagramUsername(adapter, htmlUsername)
           return {
             username: htmlUsername,
             source: 'WEBSITE_HTML',
-            profileData,
+            profileData: { igUsername: htmlUsername },
           }
         }
       }
