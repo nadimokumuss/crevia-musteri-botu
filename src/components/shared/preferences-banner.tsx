@@ -41,11 +41,11 @@ export function PreferencesBanner() {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 sm:flex-row sm:items-center sm:justify-between">
       <p className="text-sm text-amber-800">
-        İlçe ve sektör seçmediğiniz takdirde tüm ilçeler ve sektörler bazında işletme dağıtımı yapılır.
+        Ilce ve sektor secmezseniz, yonetici sizin icin manuel arama listesi olustururken tum lead havuzunu kullanir.
       </p>
       <Link href="/settings">
         <Button variant="outline" size="sm" className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100">
-          İlçe ve Sektör Seç
+          Ilce ve Sektor Sec
         </Button>
       </Link>
     </div>

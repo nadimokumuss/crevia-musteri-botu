@@ -8,7 +8,6 @@ const PAGE_PERMISSIONS: Record<string, AgentRole[]> = {
   // Dashboard sayfaları
   '/admin': ['ADMIN'],
   '/agents': ['ADMIN'],
-  '/hunter': ['ADMIN'],
   '/settings': ['ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT'],
   '/leads': ['ADMIN'],
   '/routes': ['ADMIN', 'FIELD_AGENT'],
@@ -107,14 +106,14 @@ export async function middleware(request: NextRequest) {
   }
 
   // Rol bazlı erişim kontrolü
-  const userRole = (user.user_metadata?.role as AgentRole) ?? 'FIELD_AGENT'
+  const userRole = (user.user_metadata?.role as AgentRole) ?? 'TELESALES_AGENT'
 
   for (const [path, allowedRoles] of Object.entries(PAGE_PERMISSIONS)) {
     if (pathname.startsWith(path) && !allowedRoles.includes(userRole)) {
       if (pathname.startsWith('/api/')) {
         return NextResponse.json({ error: 'Erişim reddedildi' }, { status: 403 })
       }
-      const defaultPath = userRole === 'ADMIN' ? '/analytics' : '/my/leads'
+      const defaultPath = userRole === 'ADMIN' ? '/analytics' : '/my/calls'
       return NextResponse.redirect(new URL(defaultPath, request.url))
     }
   }

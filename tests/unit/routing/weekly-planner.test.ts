@@ -7,20 +7,20 @@ describe('getDayType', () => {
     expect(getDayType(new Date(2026, 1, 16))).toBe('REMOTE')
   })
 
-  it('Salı = FIELD', () => {
-    expect(getDayType(new Date(2026, 1, 17))).toBe('FIELD')
+  it('Salı = REMOTE', () => {
+    expect(getDayType(new Date(2026, 1, 17))).toBe('REMOTE')
   })
 
   it('Çarşamba = REMOTE', () => {
     expect(getDayType(new Date(2026, 1, 18))).toBe('REMOTE')
   })
 
-  it('Perşembe = FIELD', () => {
-    expect(getDayType(new Date(2026, 1, 19))).toBe('FIELD')
+  it('Perşembe = REMOTE', () => {
+    expect(getDayType(new Date(2026, 1, 19))).toBe('REMOTE')
   })
 
-  it('Cuma = ADMIN', () => {
-    expect(getDayType(new Date(2026, 1, 20))).toBe('ADMIN')
+  it('Cuma = REMOTE', () => {
+    expect(getDayType(new Date(2026, 1, 20))).toBe('REMOTE')
   })
 
   it('Cumartesi = OFF', () => {
@@ -33,8 +33,8 @@ describe('getDayType', () => {
 })
 
 describe('isFieldDay', () => {
-  it('Salı saha günüdür', () => {
-    expect(isFieldDay(new Date(2026, 1, 17))).toBe(true)
+  it('Salı saha günü değildir', () => {
+    expect(isFieldDay(new Date(2026, 1, 17))).toBe(false)
   })
 
   it('Pazartesi saha günü değildir', () => {
@@ -47,8 +47,8 @@ describe('isRemoteDay', () => {
     expect(isRemoteDay(new Date(2026, 1, 16))).toBe(true)
   })
 
-  it('Salı telefon günü değildir', () => {
-    expect(isRemoteDay(new Date(2026, 1, 17))).toBe(false)
+  it('Salı da telefon günüdür', () => {
+    expect(isRemoteDay(new Date(2026, 1, 17))).toBe(true)
   })
 })
 
@@ -61,7 +61,7 @@ describe('isWorkDay', () => {
     expect(isWorkDay(new Date(2026, 1, 21))).toBe(false)
   })
 
-  it('Cuma çalışma günüdür (ADMIN)', () => {
+  it('Cuma çalışma günüdür', () => {
     expect(isWorkDay(new Date(2026, 1, 20))).toBe(true)
   })
 })
@@ -75,10 +75,10 @@ describe('getWorkDays', () => {
 
     expect(workDays).toHaveLength(5) // Pzt, Sal, Çar, Per, Cum
     expect(workDays[0].type).toBe('REMOTE')  // Pzt
-    expect(workDays[1].type).toBe('FIELD')   // Sal
+    expect(workDays[1].type).toBe('REMOTE')  // Sal
     expect(workDays[2].type).toBe('REMOTE')  // Çar
-    expect(workDays[3].type).toBe('FIELD')   // Per
-    expect(workDays[4].type).toBe('ADMIN')   // Cum
+    expect(workDays[3].type).toBe('REMOTE')  // Per
+    expect(workDays[4].type).toBe('REMOTE')  // Cum
   })
 
   it('hafta sonu günlerini dahil etmez', () => {

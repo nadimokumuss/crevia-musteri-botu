@@ -42,8 +42,8 @@ const CATEGORIES = [
   },
   {
     key: 'visited',
-    label: 'Ziyaret Edilen',
-    description: 'Saha ziyareti tamamlanan',
+    label: 'Tamamlanan Aramalar',
+    description: 'Sonucu girilmiş telefon görüşmeleri',
     color: 'border-green-200 bg-green-50 hover:bg-green-100',
     activeColor: 'border-green-500 bg-green-100 ring-2 ring-green-300',
   },

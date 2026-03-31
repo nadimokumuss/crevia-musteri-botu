@@ -4,18 +4,19 @@ import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { getDayType } from '@/core/scheduler/weekly-planner'
 import { WINX_FAIRIES } from '@/lib/constants'
+import { formatLongDateInIstanbul, getTodayDateInIstanbul, parseIstanbulDate } from '@/lib/date-utils'
 import { useCurrentUser } from '@/hooks/use-current-user'
 
 const DAY_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  FIELD: { label: 'Saha Günü', color: 'bg-green-100 text-green-800' },
+  REMOTE: { label: 'Arama Gunu', color: 'bg-blue-100 text-blue-800' },
   OFF: { label: 'Tatil', color: 'bg-gray-100 text-gray-800' },
 }
 
 export function Topbar() {
   const router = useRouter()
-  const today = new Date()
+  const today = parseIstanbulDate(getTodayDateInIstanbul())
   const dayType = getDayType(today)
-  const dayConfig = DAY_TYPE_LABELS[dayType]
+  const dayConfig = DAY_TYPE_LABELS[dayType] ?? DAY_TYPE_LABELS.OFF
   const { user } = useCurrentUser()
 
   return (
@@ -30,12 +31,7 @@ export function Topbar() {
         </button>
         <span className="text-sm font-medium md:hidden">Crevia Sales OS</span>
         <span className="hidden text-sm text-muted-foreground md:block">
-          {today.toLocaleDateString('tr-TR', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}
+          {formatLongDateInIstanbul(today)}
         </span>
       </div>
       <div className="flex items-center gap-3">

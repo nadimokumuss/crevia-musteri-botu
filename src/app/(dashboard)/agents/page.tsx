@@ -57,7 +57,7 @@ export default function AgentsPage() {
     email: '',
     password: '',
     phone: '',
-    role: 'FIELD_AGENT' as AgentRole,
+    role: 'TELESALES_AGENT' as AgentRole,
     max_daily_visits: 10,
   })
 
@@ -121,7 +121,7 @@ export default function AgentsPage() {
 
       if (response.ok) {
         setDialogOpen(false)
-        setNewAgent({ full_name: '', email: '', password: '', phone: '', role: 'FIELD_AGENT', max_daily_visits: 10 })
+        setNewAgent({ full_name: '', email: '', password: '', phone: '', role: 'TELESALES_AGENT', max_daily_visits: 10 })
         setSuccessMessage('Ajan oluşturuldu. Belirlediğiniz şifre ile giriş yapabilir.')
         setTimeout(() => setSuccessMessage(null), 5000)
         loadAgents()
@@ -223,8 +223,8 @@ export default function AgentsPage() {
   }
 
   const activeAgents = agents.filter((a) => a.is_active)
-  const fieldAgents = agents.filter((a) => a.role === 'FIELD_AGENT' && a.is_active)
   const teleAgents = agents.filter((a) => a.role === 'TELESALES_AGENT' && a.is_active)
+  const adminUsers = agents.filter((a) => a.role === 'ADMIN' && a.is_active)
 
   const districtOptions = districts.map((d) => ({ value: d.id, label: d.name }))
   const categoryOptions = CATEGORIES.map((c) => ({ value: c, label: c }))
@@ -257,7 +257,7 @@ export default function AgentsPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Yeni Ajan</DialogTitle>
-              <DialogDescription>Satış ekibine yeni ajan ekleyin</DialogDescription>
+              <DialogDescription>Telefon ekibine yeni kullanıcı ekleyin</DialogDescription>
             </DialogHeader>
             <div className="space-y-4">
               <div className="space-y-2">
@@ -299,14 +299,13 @@ export default function AgentsPage() {
                 >
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="FIELD_AGENT">Saha Ajanı</SelectItem>
                     <SelectItem value="TELESALES_AGENT">Telefon Ajanı</SelectItem>
                     <SelectItem value="ADMIN">Yönetici</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Günlük Maks. Ziyaret</label>
+                <label className="text-sm font-medium">Günlük Kapasite</label>
                 <Input
                   type="number"
                   value={newAgent.max_daily_visits}
@@ -336,14 +335,14 @@ export default function AgentsPage() {
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{fieldAgents.length}</div>
-            <p className="text-sm text-muted-foreground">Saha Ajanı</p>
+            <div className="text-2xl font-bold">{teleAgents.length}</div>
+            <p className="text-sm text-muted-foreground">Telefon Ajanı</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-6">
-            <div className="text-2xl font-bold">{teleAgents.length}</div>
-            <p className="text-sm text-muted-foreground">Telefon Ajanı</p>
+            <div className="text-2xl font-bold">{adminUsers.length}</div>
+            <p className="text-sm text-muted-foreground">Yönetici</p>
           </CardContent>
         </Card>
       </div>
@@ -441,7 +440,7 @@ export default function AgentsPage() {
             <AlertDialogTitle>Ajanı Sil</AlertDialogTitle>
             <AlertDialogDescription>
               <strong>{deleteTarget?.full_name}</strong> ajanını silmek istediğinize emin misiniz?
-              Bu işlem geri alınamaz, ilişkili atamalar ve rotalar da silinecektir.
+              Bu işlem geri alınamaz, ilişkili atamalar ve arama listeleri de silinecektir.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -461,7 +460,7 @@ export default function AgentsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Tercihler — {prefsTarget?.full_name}</DialogTitle>
-            <DialogDescription>Ajanın çalışma ilçelerini ve sektör tercihlerini belirleyin</DialogDescription>
+            <DialogDescription>Manuel arama listesi üretiminde kullanılacak ilçe ve sektör tercihlerini belirleyin</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -491,7 +490,7 @@ export default function AgentsPage() {
             <Button
               onClick={savePreferences}
               className="w-full"
-              disabled={isSavingPrefs || prefsDistrictIds.length === 0}
+              disabled={isSavingPrefs}
             >
               {isSavingPrefs ? 'Kaydediliyor...' : 'Kaydet'}
             </Button>

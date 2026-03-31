@@ -1,7 +1,7 @@
 /**
  * Öncelik kuyruğu ile arama listesi oluşturucu
  *
- * Telefon günlerinde (Salı/Perşembe) aranacak lead'leri
+ * Telefon gunlerinde aranacak lead'leri
  * need_score'a göre sıralar ve ajan başına liste oluşturur.
  */
 
@@ -12,11 +12,17 @@ interface LeadForCall {
   businessName: string
   phone: string | null
   needScore: number
+  districtId?: string | null
+  category?: string | null
+  igUsername?: string | null
 }
 
 interface CallListOptions {
   maxItems?: number
   minScore?: number
+  excludedLeadIds?: Iterable<string>
+  districtIds?: string[]
+  categories?: string[]
 }
 
 /**
@@ -29,16 +35,7 @@ export function generateCallList(
   leads: LeadForCall[],
   options: CallListOptions = {}
 ): CallListItem[] {
-  const { maxItems = 30, minScore = 20 } = options
-
-  // Telefonsuz lead'leri ve minimum puan altındakileri filtrele
-  const eligible = leads.filter((l) => l.phone && l.needScore >= minScore)
-
-  // Need score'a göre azalan sıralama (öncelik kuyruğu)
-  const sorted = [...eligible].sort((a, b) => b.needScore - a.needScore)
-
-  // Maksimum sayıya göre kes
-  const selected = sorted.slice(0, maxItems)
+  const selected = selectCallLeadCandidates(leads, options)
 
   // CallListItem formatına dönüştür
   return selected.map((lead, index) => ({
@@ -47,8 +44,41 @@ export function generateCallList(
     businessName: lead.businessName,
     phone: lead.phone,
     needScore: lead.needScore,
+    igUsername: lead.igUsername,
     status: 'PENDING' as const,
   }))
+}
+
+export function selectCallLeadCandidates(
+  leads: LeadForCall[],
+  options: CallListOptions = {}
+): LeadForCall[] {
+  const {
+    maxItems = 30,
+    minScore = 20,
+    excludedLeadIds = [],
+    districtIds = [],
+    categories = [],
+  } = options
+
+  const excludedSet = new Set(excludedLeadIds)
+  const hasDistrictFilter = districtIds.length > 0
+  const hasCategoryFilter = categories.length > 0
+
+  return [...leads]
+    .filter((lead) => {
+      if (!lead.phone || lead.needScore < minScore) return false
+      if (excludedSet.has(lead.id)) return false
+      if (hasDistrictFilter && (!lead.districtId || !districtIds.includes(lead.districtId))) {
+        return false
+      }
+      if (hasCategoryFilter && (!lead.category || !categories.includes(lead.category))) {
+        return false
+      }
+      return true
+    })
+    .sort((a, b) => b.needScore - a.needScore)
+    .slice(0, maxItems)
 }
 
 /**

@@ -1,8 +1,9 @@
 /**
  * Kilit yöneticisi - Çatışma önleme
  *
- * assignments tablosunda UNIQUE(lead_id, scheduled_date, assignment_type)
- * kısıtlaması + lock_expires_at ile otomatik kilit süresi.
+ * assignments tablosunda UNIQUE(lead_id) kısıtlaması bulunur.
+ * Bir lead bir kez atandıktan sonra yeniden atanmaz; lock alanları
+ * sadece mevcut kaydın eşzamanlı güncellenmesini korur.
  */
 
 import { createServiceRoleClient } from '@/infra/supabase/server'
@@ -19,8 +20,8 @@ export interface LockResult {
 /**
  * Bir lead için kilit al
  *
- * Aynı lead + tarih + tip kombinasyonu için zaten aktif bir atama/kilit varsa
- * çatışma hatası fırlatır.
+ * Lead için mevcut bir atama varsa tekrar atama yapılmaz.
+ * Aynı kayıt yeniden kilitleniyorsa lock alanları güncellenir.
  */
 export async function acquireLock(
   leadId: string,
@@ -46,29 +47,29 @@ export async function acquireLock(
   // Mevcut atama/kilit kontrolü
   const { data: existing } = await supabase
     .from('assignments')
-    .select('id, agent_id, status, locked_by, lock_expires_at')
+    .select('id, agent_id, status, locked_by, lock_expires_at, scheduled_date, assignment_type')
     .eq('lead_id', leadId)
-    .eq('scheduled_date', scheduledDate)
-    .eq('assignment_type', assignmentType)
     .single()
 
   if (existing) {
-    // Zaten tamamlanmış veya iptal edilmişse yeni atama yapılabilir
-    if (existing.status === 'COMPLETED' || existing.status === 'CANCELLED') {
-      // Üzerine yazılabilir
-    } else if (existing.locked_by && existing.locked_by !== agentId) {
-      // Başka biri tarafından kilitli
+    const isSameAssignment =
+      existing.agent_id === agentId &&
+      existing.scheduled_date === scheduledDate &&
+      existing.assignment_type === assignmentType
+
+    if (existing.locked_by && existing.locked_by !== agentId) {
       const lockExpires = existing.lock_expires_at ? new Date(existing.lock_expires_at) : null
       if (lockExpires && lockExpires > now) {
         throw new ConflictError(
           `Bu lead zaten başka bir ajan tarafından kilitlenmiş (süre: ${lockExpires.toISOString()})`
         )
       }
-    } else if (existing.agent_id !== agentId && existing.status === 'IN_PROGRESS') {
-      throw new ConflictError('Bu lead zaten başka bir ajana atanmış ve üzerinde çalışılıyor')
     }
 
-    // Mevcut kaydı güncelle
+    if (!isSameAssignment) {
+      throw new ConflictError('Bu lead daha once bir ajana atanmis. Tekrar atama kapali.')
+    }
+
     const { error } = await supabase
       .from('assignments')
       .update({
@@ -105,9 +106,8 @@ export async function acquireLock(
     .single()
 
   if (insertError) {
-    // UNIQUE constraint violation -> çatışma
     if (insertError.code === '23505') {
-      throw new ConflictError('Bu lead için aynı tarih ve tipte zaten bir atama mevcut')
+      throw new ConflictError('Bu lead daha once atanmis. Tekrar atama kapali.')
     }
     logger.error('Kilit oluşturulamadı', { error: insertError.message })
     return { acquired: false, lockId: null, expiresAt: null }

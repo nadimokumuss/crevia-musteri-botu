@@ -4,25 +4,25 @@
 
 import type { DayType, WeeklySchedule } from '@/types/schedule'
 
-/** Haftalık takvim — FIELD ajanlar haftanın 5 günü sahada, TELESALES 5 gün telefonda */
+/** Haftalık takvim — hafta ici arama, hafta sonu tatil */
 export const WEEKLY_SCHEDULE: WeeklySchedule = {
-  monday: 'FIELD',
-  tuesday: 'FIELD',
-  wednesday: 'FIELD',
-  thursday: 'FIELD',
-  friday: 'FIELD',
+  monday: 'REMOTE',
+  tuesday: 'REMOTE',
+  wednesday: 'REMOTE',
+  thursday: 'REMOTE',
+  friday: 'REMOTE',
   saturday: 'OFF',
   sunday: 'OFF',
 }
 
-/** Gün indeksinden (0=Pazar) gün tipine eşleme — Pzt-Cum hepsi FIELD */
+/** Gün indeksinden (0=Pazar) gün tipine eşleme — Pzt-Cum hepsi REMOTE */
 export const DAY_INDEX_TO_TYPE: Record<number, DayType> = {
   0: 'OFF',      // Pazar
-  1: 'FIELD',    // Pazartesi
-  2: 'FIELD',    // Salı
-  3: 'FIELD',    // Çarşamba
-  4: 'FIELD',    // Perşembe
-  5: 'FIELD',    // Cuma
+  1: 'REMOTE',   // Pazartesi
+  2: 'REMOTE',   // Salı
+  3: 'REMOTE',   // Çarşamba
+  4: 'REMOTE',   // Perşembe
+  5: 'REMOTE',   // Cuma
   6: 'OFF',      // Cumartesi
 }
 
@@ -50,7 +50,7 @@ export const ROUTE_DEFAULTS = {
 /** Kilit süresi (dakika) */
 export const LOCK_DURATION_MINUTES = 30
 
-/** Maksimum günlük ziyaret sayısı (FIELD saha) */
+/** Legacy saha modulu icin gunluk ziyaret limiti */
 export const MAX_DAILY_VISITS = 10
 
 /** Günlük arama hedefi (TELESALES ajanlar için) */

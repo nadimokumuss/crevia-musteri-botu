@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { hydrateCallListItemsWithInstagram } from '@/infra/supabase/hydrate-call-list-items'
 import { createServiceRoleClient } from '@/infra/supabase/server'
 import { updateCallOutcomeSchema } from '@/lib/validators'
 import { logger } from '@/lib/logger'
+import { logLeadActivity } from '@/infra/supabase/log-activity'
+import type { CallListItem } from '@/types/call'
 
 export async function PATCH(
   request: NextRequest,
@@ -50,7 +53,7 @@ export async function PATCH(
     if (parsed.outcome !== undefined) items[itemIndex].outcome = parsed.outcome
     if (parsed.notes !== undefined) items[itemIndex].notes = parsed.notes
 
-    const completedCount = items.filter((i) => i.status === 'COMPLETED').length
+    const completedCount = items.filter((i) => i.status !== 'PENDING').length
 
     const { data: updated, error: updateError } = await supabase
       .from('call_lists')
@@ -67,13 +70,42 @@ export async function PATCH(
       return NextResponse.json({ error: 'Güncelleme başarısız' }, { status: 500 })
     }
 
+    const nextAssignmentStatus =
+      !parsed.status || parsed.status === 'PENDING'
+        ? 'PENDING'
+        : parsed.status === 'COMPLETED' || parsed.status === 'INTERESTED'
+          ? 'COMPLETED'
+          : 'IN_PROGRESS'
+
+    await supabase
+      .from('assignments')
+      .update({ status: nextAssignmentStatus })
+      .eq('lead_id', items[itemIndex].leadId)
+      .eq('assignment_type', 'CALL')
+
+    logLeadActivity({
+      leadId: items[itemIndex].leadId,
+      activityType: 'CALL_LOGGED',
+      description: `Arama sonucu: ${parsed.outcome ?? parsed.status ?? 'guncellendi'}`,
+      newValue: parsed.outcome ?? parsed.status ?? null,
+      metadata: { call_list_id: id, notes: parsed.notes },
+    })
+
     logger.info('Arama sonucu güncellendi', {
       callListId: id,
       leadId: items[itemIndex].leadId,
       status: parsed.status,
     })
 
-    return NextResponse.json(updated)
+    const hydratedItems = await hydrateCallListItemsWithInstagram(
+      supabase,
+      (updated.items as CallListItem[])
+    )
+
+    return NextResponse.json({
+      ...updated,
+      items: hydratedItems,
+    })
   } catch (error) {
     logger.error('Call outcome PATCH hatası', { error: String(error) })
     return NextResponse.json(

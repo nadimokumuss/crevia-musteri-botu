@@ -68,7 +68,10 @@ export async function POST(request: NextRequest) {
       { status: 201 }
     )
   } catch (error) {
-    if (error instanceof Error && error.message.includes('kilitlenmiş')) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('kilitlenmiş') || error.message.includes('atanmis'))
+    ) {
       return NextResponse.json({ error: error.message }, { status: 409 })
     }
     logger.error('Assignments POST hatası', { error: String(error) })

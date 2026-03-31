@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Ajan oluşturulamadı' }, { status: 500 })
     }
 
-    // 3. Boş agent_preferences kaydı oluştur (haftalık plan dağıtımına dahil olması için)
+    // 3. Boş agent_preferences kaydı oluştur (manuel liste üretiminde opsiyonel kullanılacak)
     const { error: prefsError } = await supabase
       .from('agent_preferences')
       .insert({ agent_id: data.id, district_ids: [], categories: [] })

@@ -78,7 +78,7 @@ export async function GET(request: NextRequest) {
         .select('lead_id')
         .eq('status', assignmentStatus)
       if (assignmentType) {
-        assignmentQuery = assignmentQuery.eq('type', assignmentType)
+        assignmentQuery = assignmentQuery.eq('assignment_type', assignmentType)
       }
       const { data: assignments } = await assignmentQuery
       const assignedLeadIds = (assignments ?? []).map((a) => a.lead_id).filter(Boolean)

@@ -1,549 +1,553 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { getDayType } from '@/core/scheduler/weekly-planner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { CATEGORIES } from '@/lib/constants'
+import { formatLongDateInIstanbul, getTodayDateInIstanbul, parseIstanbulDate } from '@/lib/date-utils'
+import type { Agent, District, ScrapeJob } from '@/types/database'
 
-interface ScrapeConfig {
-  districtId: string
-  category: string
-  limit?: number
+type ScrapeSource = 'google-places' | 'apify' | 'instagram'
+
+interface ScrapeSummary {
+  jobId: string
+  leadsFound: number
+  leadsNew: number
+  leadsUpdated: number
 }
 
-interface ScrapeStatus {
-  completedJobs: number
-  totalJobs: number
-  failedJobs: number
-}
-
-interface DailyDistributeResult {
-  status: 'COMPLETED' | 'FAILED'
-  date: string
-  dayType: string
-  stats?: {
-    totalFieldLeads: number
-    totalCallLeads: number
-    unassignedLeads: number
-    perAgent: Array<{ agentId: string; routeCount: number; callCount: number }>
-  }
-  planId?: string
-  errorMessage?: string
+interface ManualCallListSummary {
+  id: string
+  total_items: number
+  assignedExcluded?: number
+  preferencesApplied?: boolean
 }
 
 const DAY_TYPE_LABELS: Record<string, string> = {
-  FIELD: 'SAHA',
-  OFF: 'TATiL',
+  REMOTE: 'Arama Günü',
+  OFF: 'Tatil',
 }
 
-const DAY_NAME_TR: Record<number, string> = {
-  0: 'Pazar',
-  1: 'Pazartesi',
-  2: 'Sali',
-  3: 'Carsamba',
-  4: 'Persembe',
-  5: 'Cuma',
-  6: 'Cumartesi',
+const JOB_STATUS_LABELS: Record<string, string> = {
+  PENDING: 'Bekliyor',
+  RUNNING: 'Çalışıyor',
+  COMPLETED: 'Tamamlandı',
+  FAILED: 'Başarısız',
 }
 
-const DAY_INDEX_TO_TYPE: Record<number, string> = {
-  0: 'OFF',
-  1: 'FIELD',
-  2: 'FIELD',
-  3: 'FIELD',
-  4: 'FIELD',
-  5: 'FIELD',
-  6: 'OFF',
-}
-
-function getTodayInfo() {
-  const istanbulOffset = 3 * 60 * 60 * 1000
-  const istanbulNow = new Date(Date.now() + istanbulOffset)
-  const dateStr = istanbulNow.toISOString().split('T')[0]
-  const dayIndex = istanbulNow.getUTCDay()
-  const dayName = DAY_NAME_TR[dayIndex] ?? ''
-  const dayType = DAY_INDEX_TO_TYPE[dayIndex] ?? 'OFF'
-  return { dateStr, dayName, dayType }
+const JOB_STATUS_CLASSES: Record<string, string> = {
+  PENDING: 'bg-slate-100 text-slate-800',
+  RUNNING: 'bg-blue-100 text-blue-800',
+  COMPLETED: 'bg-green-100 text-green-800',
+  FAILED: 'bg-red-100 text-red-800',
 }
 
 export default function AdminPage() {
+  const [districts, setDistricts] = useState<District[]>([])
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [scrapeJobs, setScrapeJobs] = useState<ScrapeJob[]>([])
+
+  const [isLoadingBaseData, setIsLoadingBaseData] = useState(true)
+  const [pageError, setPageError] = useState<string | null>(null)
+
+  const [scrapeDistrictId, setScrapeDistrictId] = useState('')
+  const [scrapeSource, setScrapeSource] = useState<ScrapeSource>('google-places')
+  const [scrapeCategory, setScrapeCategory] = useState('all')
+  const [scrapeLimit, setScrapeLimit] = useState('40')
+  const [skipInstagram, setSkipInstagram] = useState(true)
+  const [isScraping, setIsScraping] = useState(false)
+  const [scrapeError, setScrapeError] = useState<string | null>(null)
+  const [scrapeResult, setScrapeResult] = useState<ScrapeSummary | null>(null)
+
+  const [callAgentId, setCallAgentId] = useState('')
+  const [callListDate, setCallListDate] = useState(() => getTodayDateInIstanbul())
+  const [callMaxItems, setCallMaxItems] = useState('20')
+  const [callMinScore, setCallMinScore] = useState('20')
+  const [isCreatingCallList, setIsCreatingCallList] = useState(false)
+  const [callListError, setCallListError] = useState<string | null>(null)
+  const [callListResult, setCallListResult] = useState<ManualCallListSummary | null>(null)
+
   const [isScoringAll, setIsScoringAll] = useState(false)
   const [scoreResult, setScoreResult] = useState<{ scored: number; total: number } | null>(null)
 
-  // Tarama state
-  const [isScrapingActive, setIsScrapingActive] = useState(false)
-  const [scrapeStatus, setScrapeStatus] = useState<ScrapeStatus | null>(null)
-  const [scrapeError, setScrapeError] = useState<string | null>(null)
-  const [skippedAgents, setSkippedAgents] = useState<string[]>([])
-  const abortRef = useRef<AbortController | null>(null)
+  const [isEnrichingInstagram, setIsEnrichingInstagram] = useState(false)
+  const [instagramError, setInstagramError] = useState<string | null>(null)
+  const [instagramResult, setInstagramResult] = useState<{ enriched: number; remaining: number | null } | null>(null)
 
-  // Günlük dağıtım state
-  const [isDistributing, setIsDistributing] = useState(false)
-  const [distributeResult, setDistributeResult] = useState<DailyDistributeResult | null>(null)
-  const [distributeError, setDistributeError] = useState<string | null>(null)
-  const [isResetting, setIsResetting] = useState(false)
-  const [hasExistingPlan, setHasExistingPlan] = useState(false)
-  const [selectedDate, setSelectedDate] = useState('')
+  const todayDate = getTodayDateInIstanbul()
+  const dayType = getDayType(parseIstanbulDate(todayDate))
+  const activeTeleAgents = useMemo(
+    () => agents.filter((agent) => agent.role === 'TELESALES_AGENT' && agent.is_active),
+    [agents]
+  )
 
-  // Instagram zenginleştirme state
-  const [isEnrichingIG, setIsEnrichingIG] = useState(false)
-  const [igEnrichResult, setIgEnrichResult] = useState<{ enriched: number; remaining: number | null } | null>(null)
-  const [igEnrichError, setIgEnrichError] = useState<string | null>(null)
-
-  const todayInfo = getTodayInfo()
-  const canDistribute = todayInfo.dayType !== 'OFF'
-
-  // Sayfa yüklendiğinde mevcut günlük dağıtımı kontrol et
   useEffect(() => {
-    checkExistingDailyPlan()
-    return () => {
-      abortRef.current?.abort()
-    }
+    void loadDashboardData()
   }, [])
 
-  async function checkExistingDailyPlan() {
+  async function loadDashboardData() {
+    setIsLoadingBaseData(true)
+    setPageError(null)
+
     try {
-      // weekly_plans tablosunda bugünün tarihiyle kayıt var mı kontrol et
-      const res = await fetch('/api/weekly-plan')
-      if (res.ok) {
-        const data = await res.json()
-        if (data && data.week_start === todayInfo.dateStr && data.status === 'COMPLETED') {
-          setHasExistingPlan(true)
-          setDistributeResult({
-            status: 'COMPLETED',
-            date: data.week_start,
-            dayType: todayInfo.dayType,
-            stats: data.distribution_stats,
-            planId: data.id,
-          })
-        }
+      const [districtsRes, agentsRes, jobsRes] = await Promise.all([
+        fetch('/api/districts?is_active=true'),
+        fetch('/api/agents?is_active=true&role=TELESALES_AGENT'),
+        fetch('/api/scraper'),
+      ])
+
+      const [districtsData, agentsData, jobsData] = await Promise.all([
+        districtsRes.json(),
+        agentsRes.json(),
+        jobsRes.json(),
+      ])
+
+      if (!districtsRes.ok) {
+        throw new Error(districtsData.error ?? 'İlçeler yüklenemedi')
       }
-    } catch { /* ignored */ }
+      if (!agentsRes.ok) {
+        throw new Error(agentsData.error ?? 'Telefon ajanları yüklenemedi')
+      }
+      if (!jobsRes.ok) {
+        throw new Error(jobsData.error ?? 'Tarama işleri yüklenemedi')
+      }
+
+      const nextDistricts = Array.isArray(districtsData) ? (districtsData as District[]) : []
+      const nextAgents = Array.isArray(agentsData) ? (agentsData as Agent[]) : []
+      const nextJobs = Array.isArray(jobsData) ? (jobsData as ScrapeJob[]) : []
+
+      setDistricts(nextDistricts)
+      setAgents(nextAgents)
+      setScrapeJobs(nextJobs)
+
+      setScrapeDistrictId((current) => current || nextDistricts[0]?.id || '')
+      setCallAgentId((current) => current || nextAgents[0]?.id || '')
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : 'Veriler yüklenemedi')
+    } finally {
+      setIsLoadingBaseData(false)
+    }
   }
 
-  const runScrapeJobs = useCallback(async (configs: ScrapeConfig[]) => {
-    const controller = new AbortController()
-    abortRef.current = controller
+  async function refreshScrapeJobs() {
+    try {
+      const response = await fetch('/api/scraper')
+      const data = await response.json()
 
-    let completed = 0
-    let failed = 0
-    const total = configs.length
-
-    const promises = configs.map(async (config) => {
-      try {
-        const res = await fetch('/api/scraper', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            district_id: config.districtId,
-            source_adapter: 'google-places',
-            category: config.category || undefined,
-            skip_instagram: true,
-            limit: config.limit,
-          }),
-          signal: controller.signal,
-        })
-
-        if (res.ok) {
-          completed++
-        } else {
-          failed++
-        }
-      } catch (err) {
-        if ((err as Error).name !== 'AbortError') {
-          failed++
-        }
+      if (response.ok && Array.isArray(data)) {
+        setScrapeJobs(data as ScrapeJob[])
       }
+    } catch {
+      // Son işler yüklenemese de ekran çalışmaya devam etsin.
+    }
+  }
 
-      setScrapeStatus({
-        completedJobs: completed + failed,
-        totalJobs: total,
-        failedJobs: failed,
-      })
-    })
-
-    await Promise.all(promises)
-
-    if (completed === 0) {
-      setScrapeError('Tüm tarama isleri basarisiz oldu')
-      return false
+  async function handleManualScrape() {
+    if (!scrapeDistrictId) {
+      setScrapeError('Tarama için önce ilçe seçin')
+      return
     }
 
-    return true
-  }, [])
-
-  async function handleStartScrape() {
-    setIsScrapingActive(true)
+    setIsScraping(true)
     setScrapeError(null)
-    setScrapeStatus(null)
-    setSkippedAgents([])
+    setScrapeResult(null)
 
     try {
-      const res = await fetch('/api/weekly-plan?mode=scan', {
+      const response = await fetch('/api/scraper', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
+        body: JSON.stringify({
+          district_id: scrapeDistrictId,
+          source_adapter: scrapeSource,
+          category: scrapeCategory === 'all' ? undefined : scrapeCategory,
+          limit: Number(scrapeLimit),
+          skip_instagram: skipInstagram,
+        }),
       })
 
-      const data = await res.json()
+      const data = await response.json()
 
-      if (!res.ok) {
-        setScrapeError(data.error ?? 'Tarama baslatılamadı')
+      if (!response.ok) {
+        setScrapeError(data.error ?? 'Tarama başlatılamadı')
         return
       }
 
-      setSkippedAgents(data.skippedAgents ?? [])
-      setScrapeStatus({
-        completedJobs: 0,
-        totalJobs: data.totalJobs,
-        failedJobs: 0,
+      setScrapeResult({
+        jobId: data.jobId,
+        leadsFound: data.leadsFound ?? 0,
+        leadsNew: data.leadsNew ?? 0,
+        leadsUpdated: data.leadsUpdated ?? 0,
       })
-
-      await runScrapeJobs(data.scrapeConfigs)
+      await refreshScrapeJobs()
     } catch {
-      setScrapeError('Bir hata olustu')
+      setScrapeError('Sunucuya bağlanılamadı')
     } finally {
-      setIsScrapingActive(false)
+      setIsScraping(false)
     }
   }
 
-  async function handleDistribute(force = false, date?: string) {
-    setIsDistributing(true)
-    setDistributeError(null)
-    if (!force) setDistributeResult(null)
-    setHasExistingPlan(false)
+  async function handleCreateCallList() {
+    if (!callAgentId) {
+      setCallListError('Liste oluşturmak için telefon ajanı seçin')
+      return
+    }
+
+    setIsCreatingCallList(true)
+    setCallListError(null)
+    setCallListResult(null)
 
     try {
-      const body: Record<string, unknown> = {}
-      if (force) body.force = true
-      if (date) body.date = date
-
-      const res = await fetch('/api/daily-plan/distribute', {
+      const response = await fetch('/api/calls', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
+        body: JSON.stringify({
+          agent_id: callAgentId,
+          list_date: callListDate,
+          max_items: Number(callMaxItems),
+          min_score: Number(callMinScore),
+        }),
       })
 
-      const data = await res.json()
+      const data = await response.json()
 
-      if (!res.ok) {
-        if (res.status === 409 && data.planId) {
-          setHasExistingPlan(true)
-        }
-        setDistributeError(data.error ?? 'Dagitim basarisiz')
+      if (!response.ok) {
+        setCallListError(data.error ?? 'Arama listesi oluşturulamadı')
         return
       }
 
-      setDistributeResult(data as DailyDistributeResult)
+      setCallListResult({
+        id: data.id,
+        total_items: data.total_items ?? 0,
+        assignedExcluded: data.assignedExcluded,
+        preferencesApplied: data.preferencesApplied,
+      })
     } catch {
-      setDistributeError('Dagitim sirasinda bir hata olustu')
+      setCallListError('Sunucuya bağlanılamadı')
     } finally {
-      setIsDistributing(false)
-    }
-  }
-
-  async function handleResetDaily() {
-    setIsResetting(true)
-    setDistributeError(null)
-
-    try {
-      const dateToReset = selectedDate || todayInfo.dateStr
-      const res = await fetch(`/api/daily-plan?date=${dateToReset}`, { method: 'DELETE' })
-      if (res.ok) {
-        setDistributeResult(null)
-        setDistributeError(null)
-        setHasExistingPlan(false)
-      } else {
-        const data = await res.json()
-        setDistributeError(data.error ?? 'Sifirlama basarisiz')
-      }
-    } catch {
-      setDistributeError('Sifirlama basarisiz')
-    } finally {
-      setIsResetting(false)
+      setIsCreatingCallList(false)
     }
   }
 
   async function handleScoreAll() {
     setIsScoringAll(true)
     setScoreResult(null)
+
     try {
       const response = await fetch('/api/leads/score', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-      if (response.ok) {
-        const data = await response.json()
-        setScoreResult(data)
+
+      if (!response.ok) {
+        return
       }
+
+      const data = await response.json()
+      setScoreResult(data)
     } finally {
       setIsScoringAll(false)
     }
   }
 
   async function handleEnrichInstagram() {
-    setIsEnrichingIG(true)
-    setIgEnrichError(null)
-    setIgEnrichResult(null)
+    setIsEnrichingInstagram(true)
+    setInstagramError(null)
+    setInstagramResult(null)
 
     try {
-      const res = await fetch('/api/leads/enrich-instagram', {
+      const response = await fetch('/api/leads/enrich-instagram', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ limit: 5 }),
       })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}))
-        setIgEnrichError(err.error ?? 'Instagram zenginleştirme başarısız')
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        setInstagramError(data.error ?? 'Instagram zenginleştirme başarısız')
         return
       }
-      const data = await res.json()
-      setIgEnrichResult({
+
+      setInstagramResult({
         enriched: data.enriched ?? 0,
         remaining: data.remaining ?? null,
       })
     } catch {
-      setIgEnrichError('Sunucuya bağlanılamadı')
+      setInstagramError('Sunucuya bağlanılamadı')
     } finally {
-      setIsEnrichingIG(false)
+      setIsEnrichingInstagram(false)
     }
   }
 
-  const scrapeProgress = scrapeStatus
-    ? Math.round((scrapeStatus.completedJobs / Math.max(scrapeStatus.totalJobs, 1)) * 100)
-    : 0
+  const todayLabel = `${formatLongDateInIstanbul(parseIstanbulDate(todayDate))} · ${DAY_TYPE_LABELS[dayType] ?? dayType}`
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Yönetici Paneli</h1>
-        <p className="text-muted-foreground">Sistem yönetimi ve toplu islemler</p>
+        <h1 className="text-2xl font-bold">Yönetim</h1>
+        <p className="text-muted-foreground">
+          Sistem şu an yalnızca telefon ajanlarıyla çalışıyor. Tarama ve arama listeleri manuel yönetiliyor.
+        </p>
       </div>
 
-      {/* Instagram Zenginleştirme - tam genişlik */}
-      <Card className="border-pink-200 bg-pink-50/30">
+      {pageError && (
+        <div className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {pageError}
+        </div>
+      )}
+
+      <Card className="border-blue-200 bg-blue-50/60">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <span>📸</span> Instagram Zenginleştirme
-          </CardTitle>
+          <CardTitle>Çalışma Düzeni</CardTitle>
           <CardDescription>
-              Instagram hesabı taranmamış lead&apos;leri zenginleştir. Her çalıştırmada 5 lead işlenir, birden fazla kez çalıştırabilirsiniz.
+            Hafta içi her gün telefon araması yapılır. Otomatik dağıtım kapalıdır.
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            onClick={handleEnrichInstagram}
-            disabled={isEnrichingIG}
-            className="w-full"
-            variant="secondary"
-          >
-            {isEnrichingIG ? 'Zenginleştiriliyor...' : 'Instagram Zenginleştir'}
-          </Button>
-
-          {igEnrichError && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
-              {igEnrichError}
-            </div>
-          )}
-
-          {igEnrichResult && (
-            <div className="rounded-md bg-pink-100 p-3 text-sm">
-              <p className="font-medium text-pink-800">Zenginleştirme tamamlandı</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <Badge variant="secondary" className="bg-pink-200 text-pink-800">
-                  {igEnrichResult.enriched} lead zenginleştirildi
-                </Badge>
-                {igEnrichResult.remaining !== null && (
-                  <Badge variant="outline">
-                    {igEnrichResult.remaining} lead bekliyor
-                  </Badge>
-                )}
-              </div>
-              {igEnrichResult.remaining !== null && igEnrichResult.remaining > 0 && (
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Kalan lead&apos;ler için butona tekrar basın veya cron job bekleyin.
-                </p>
-              )}
-            </div>
-          )}
+        <CardContent className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-medium">{todayLabel}</p>
+            <p className="text-sm text-muted-foreground">
+              Tarama için `Scraper`, manuel atama için `Arama Listesi Oluştur` aksiyonlarını kullanın.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+              {activeTeleAgents.length} aktif telefon ajanı
+            </Badge>
+            <Badge variant="outline">{districts.length} aktif ilçe</Badge>
+          </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Lead Tarama */}
+      <div className="grid gap-6 xl:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Lead Tarama</CardTitle>
+            <CardTitle>Manuel Tarama</CardTitle>
             <CardDescription>
-              Ajan tercihlerine göre lead havuzunu genislet. Tarama ve dagitim birbirinden bagimsizdir.
+              İlçe ve kategori seçip doğrudan yeni lead taraması başlatın.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">İlçe</label>
+                <Select value={scrapeDistrictId} onValueChange={setScrapeDistrictId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="İlçe seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {districts.map((district) => (
+                      <SelectItem key={district.id} value={district.id}>
+                        {district.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kaynak</label>
+                <Select value={scrapeSource} onValueChange={(value) => setScrapeSource(value as ScrapeSource)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="google-places">Google Places</SelectItem>
+                    <SelectItem value="apify">Apify</SelectItem>
+                    <SelectItem value="instagram">Instagram</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Kategori</label>
+                <Select value={scrapeCategory} onValueChange={setScrapeCategory}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tüm kategoriler</SelectItem>
+                    {CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Limit</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={200}
+                  value={scrapeLimit}
+                  onChange={(event) => setScrapeLimit(event.target.value)}
+                />
+              </div>
+            </div>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={skipInstagram}
+                onChange={(event) => setSkipInstagram(event.target.checked)}
+                className="h-4 w-4 rounded border-input"
+              />
+              Tarama sırasında Instagram zenginleştirmesini atla
+            </label>
+
             <Button
-              onClick={handleStartScrape}
-              disabled={isScrapingActive}
+              onClick={handleManualScrape}
+              disabled={isScraping || isLoadingBaseData || districts.length === 0}
               className="w-full"
             >
-              {isScrapingActive ? 'Tarama devam ediyor...' : 'Tarama Baslat'}
+              {isScraping ? 'Tarama çalışıyor...' : 'Taramayı Başlat'}
             </Button>
 
-            {skippedAgents.length > 0 && (
-              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800">
-                Tercihsiz ajanlar atlandi: {skippedAgents.join(', ')}
-              </div>
-            )}
-
             {scrapeError && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
+              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
                 {scrapeError}
               </div>
             )}
 
-            {scrapeStatus && (
-              <div className="rounded-md bg-blue-50 p-3">
-                <p className="text-sm font-medium text-blue-800">
-                  Tarama: {scrapeStatus.completedJobs}/{scrapeStatus.totalJobs} tamamlandi
-                  {!isScrapingActive && ' (bitti)'}
-                </p>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-200">
-                  <div
-                    className="h-full rounded-full bg-blue-600 transition-all"
-                    style={{ width: `${scrapeProgress}%` }}
-                  />
+            {scrapeResult && (
+              <div className="rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-800">
+                <p className="font-medium">Tarama tamamlandı</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="bg-green-100 text-green-800">
+                    {scrapeResult.leadsFound} lead bulundu
+                  </Badge>
+                  <Badge variant="outline">{scrapeResult.leadsNew} yeni</Badge>
+                  <Badge variant="outline">{scrapeResult.leadsUpdated} güncellendi</Badge>
                 </div>
-                {scrapeStatus.failedJobs > 0 && (
-                  <p className="mt-1 text-xs text-amber-600">
-                    {scrapeStatus.failedJobs} tarama basarisiz
-                  </p>
-                )}
               </div>
             )}
           </CardContent>
         </Card>
 
-        {/* Günlük Dağıtım */}
         <Card>
           <CardHeader>
-            <CardTitle>Günlük Dagitim</CardTitle>
+            <CardTitle>Manuel Arama Listesi</CardTitle>
             <CardDescription>
-              Belirli bir gün için lead dagitimi yap. Hafta ici günlerde aktif.
+              Belirli bir telefon ajanı ve tarih için çağrı listesi üretin. Sistem kendiliğinden dağıtım yapmaz.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Bugünün bilgisi */}
-            <div className="rounded-md bg-muted p-3">
-              <p className="text-sm font-medium">
-                {todayInfo.dateStr} — {todayInfo.dayName} —{' '}
-                <Badge
-                  variant="secondary"
-                  className={
-                    todayInfo.dayType === 'FIELD'
-                      ? 'bg-green-100 text-green-800'
-                      : ''
-                  }
-                >
-                  {DAY_TYPE_LABELS[todayInfo.dayType] ?? todayInfo.dayType}
-                </Badge>
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {todayInfo.dayType === 'FIELD' && 'FIELD ajanlar: 10 ziyaret | TELESALES: 35 arama'}
-                {todayInfo.dayType === 'OFF' && 'Bugün tatil — dagitim yapilamaz'}
-              </p>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Telefon ajanı</label>
+                <Select value={callAgentId} onValueChange={setCallAgentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Ajan seçin" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {activeTeleAgents.map((agent) => (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        {agent.full_name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Liste tarihi</label>
+                <Input
+                  type="date"
+                  value={callListDate}
+                  onChange={(event) => setCallListDate(event.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Maksimum arama</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={callMaxItems}
+                  onChange={(event) => setCallMaxItems(event.target.value)}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Minimum skor</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={callMinScore}
+                  onChange={(event) => setCallMinScore(event.target.value)}
+                />
+              </div>
             </div>
 
-            {/* Tarih seçici */}
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium whitespace-nowrap">Tarih:</label>
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-              />
-              {selectedDate && (
-                <Button variant="ghost" size="sm" onClick={() => setSelectedDate('')}>
-                  Bugün
-                </Button>
-              )}
-            </div>
+            <Button
+              onClick={handleCreateCallList}
+              disabled={isCreatingCallList || isLoadingBaseData || activeTeleAgents.length === 0}
+              className="w-full"
+            >
+              {isCreatingCallList ? 'Liste oluşturuluyor...' : 'Arama Listesi Oluştur'}
+            </Button>
 
-            <div className="flex gap-2">
-              <Button
-                onClick={() => handleDistribute(false, selectedDate || undefined)}
-                disabled={!canDistribute || isDistributing}
-                className="flex-1"
-              >
-                {isDistributing ? 'Dagitiliyor...' : selectedDate ? `${selectedDate} Dagit` : 'Bugünü Dagit'}
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => handleDistribute(true, selectedDate || undefined)}
-                disabled={isDistributing}
-                size="default"
-              >
-                {isDistributing ? '...' : 'Yeniden Dagit'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleResetDaily}
-                disabled={isResetting}
-                size="default"
-              >
-                {isResetting ? '...' : 'Sifirla'}
-              </Button>
-            </div>
-
-            {distributeError && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
-                {distributeError}
+            {callListError && (
+              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                {callListError}
               </div>
             )}
 
-            {distributeResult?.status === 'COMPLETED' && distributeResult.stats && (
-              <div className="rounded-md bg-green-50 p-3 text-sm">
-                <p className="font-medium text-green-800">Dagitim tamamlandi!</p>
+            {callListResult && (
+              <div className="rounded-md border border-green-300 bg-green-50 p-3 text-sm text-green-800">
+                <p className="font-medium">Arama listesi oluşturuldu</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Badge variant="secondary" className="bg-green-100 text-green-800">
-                    {distributeResult.stats.totalFieldLeads} saha ziyareti
+                    {callListResult.total_items} kayıt atandı
                   </Badge>
-                  <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                    {distributeResult.stats.totalCallLeads} telefon aramasi
-                  </Badge>
-                  {distributeResult.stats.unassignedLeads > 0 && (
+                  {typeof callListResult.assignedExcluded === 'number' && (
                     <Badge variant="outline">
-                      {distributeResult.stats.unassignedLeads} atanmamis
+                      {callListResult.assignedExcluded} kayıt dışarıda kaldı
                     </Badge>
+                  )}
+                  {callListResult.preferencesApplied && (
+                    <Badge variant="outline">Ajan tercihleri uygulandı</Badge>
                   )}
                 </div>
               </div>
             )}
-
-            {distributeResult?.status === 'FAILED' && (
-              <div className="rounded-md bg-red-50 p-3 text-sm text-red-600">
-                {distributeResult.errorMessage ?? 'Dagitim hatasi'}
-              </div>
-            )}
           </CardContent>
         </Card>
+      </div>
 
-        {/* Toplu Puanlama */}
+      <div className="grid gap-6 xl:grid-cols-3">
         <Card>
           <CardHeader>
-            <CardTitle>Toplu Lead Puanlama</CardTitle>
+            <CardTitle>Toplu Puanlama</CardTitle>
             <CardDescription>
-              Puanlanmamis tüm lead&apos;leri Need Score algoritmasiyla puanla.
+              Lead havuzundaki kayıtları tekrar puanlayın.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <Button onClick={handleScoreAll} disabled={isScoringAll} className="w-full">
-              {isScoringAll ? 'Puanlaniyor...' : 'Tümünü Puanla'}
+              {isScoringAll ? 'Puanlanıyor...' : 'Tüm Leadleri Puanla'}
             </Button>
+
             {scoreResult && (
               <div className="rounded-md bg-muted p-3 text-sm">
-                <p className="font-medium">Puanlama tamamlandi</p>
-                <div className="mt-2 flex gap-4">
-                  <Badge variant="secondary">{scoreResult.scored} puanlandi</Badge>
+                <p className="font-medium">Puanlama tamamlandı</p>
+                <div className="mt-2 flex gap-2">
+                  <Badge variant="secondary">{scoreResult.scored} güncellendi</Badge>
                   <Badge variant="outline">{scoreResult.total} toplam</Badge>
                 </div>
               </div>
@@ -551,25 +555,79 @@ export default function AdminPage() {
           </CardContent>
         </Card>
 
-        {/* Haftalık Takvim */}
         <Card>
           <CardHeader>
-            <CardTitle>Haftalik Takvim</CardTitle>
-            <CardDescription>Standart calisma takvimi</CardDescription>
+            <CardTitle>Instagram Zenginleştirme</CardTitle>
+            <CardDescription>
+              Instagram verisi eksik leadlerden sıradaki 5 kaydı tamamlar.
+            </CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2 text-sm">
-              {['Pazartesi', 'Sali', 'Carsamba', 'Persembe', 'Cuma'].map((day) => (
-                <div key={day} className="flex justify-between">
-                  <span>{day}</span>
-                  <span className="text-xs text-muted-foreground">FIELD: 10 ziyaret | TELESALES: 35 arama</span>
-                </div>
-              ))}
-              <div className="flex justify-between">
-                <span>Cumartesi / Pazar</span>
-                <Badge variant="outline">Tatil</Badge>
+          <CardContent className="space-y-4">
+            <Button
+              onClick={handleEnrichInstagram}
+              disabled={isEnrichingInstagram}
+              className="w-full"
+              variant="secondary"
+            >
+              {isEnrichingInstagram ? 'Zenginleştiriliyor...' : 'Instagram Verisini Çek'}
+            </Button>
+
+            {instagramError && (
+              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                {instagramError}
               </div>
-            </div>
+            )}
+
+            {instagramResult && (
+              <div className="rounded-md bg-pink-50 p-3 text-sm text-pink-800">
+                <p className="font-medium">İşlem tamamlandı</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="bg-pink-100 text-pink-800">
+                    {instagramResult.enriched} kayıt işlendi
+                  </Badge>
+                  {instagramResult.remaining !== null && (
+                    <Badge variant="outline">{instagramResult.remaining} kayıt bekliyor</Badge>
+                  )}
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Son Tarama İşleri</CardTitle>
+            <CardDescription>
+              En güncel manuel tarama sonuçları.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {scrapeJobs.slice(0, 5).map((job) => (
+              <div key={job.id} className="rounded-lg border p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">{job.category || 'Genel tarama'}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {job.source_adapter} · {job.created_at.slice(0, 10)}
+                    </p>
+                  </div>
+                  <Badge variant="secondary" className={JOB_STATUS_CLASSES[job.status] ?? ''}>
+                    {JOB_STATUS_LABELS[job.status] ?? job.status}
+                  </Badge>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span>{job.leads_found} bulundu</span>
+                  <span>{job.leads_new} yeni</span>
+                  <span>{job.leads_updated} güncellendi</span>
+                </div>
+              </div>
+            ))}
+
+            {scrapeJobs.length === 0 && (
+              <p className="text-sm text-muted-foreground">
+                Henüz manuel tarama çalıştırılmadı.
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { hydrateCallListItemsWithInstagram } from '@/infra/supabase/hydrate-call-list-items'
 import { createServerSupabaseClient, createServiceRoleClient } from '@/infra/supabase/server'
 import { logLeadActivity } from '@/infra/supabase/log-activity'
+import { getTodayDateInIstanbul } from '@/lib/date-utils'
 import { logger } from '@/lib/logger'
+import { updateCallOutcomeSchema } from '@/lib/validators'
 import type { CallListItem } from '@/types/call'
 
 export async function PATCH(
@@ -11,6 +14,11 @@ export async function PATCH(
   try {
     const { lead_id } = await params
     const body = await request.json()
+    const parsed = updateCallOutcomeSchema.parse({
+      status: body.status,
+      outcome: body.outcome,
+      notes: body.notes,
+    })
 
     const supabase = await createServerSupabaseClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -33,7 +41,7 @@ export async function PATCH(
     }
 
     // Tarih belirle
-    const date = body.date ?? new Date().toISOString().split('T')[0]
+    const date = body.date ?? getTodayDateInIstanbul()
 
     // Önce bu ajanın TÜM call_list'lerinde bu lead'i ara
     const { data: allCallLists } = await serviceClient
@@ -69,26 +77,19 @@ export async function PATCH(
         found = true
         return {
           ...item,
-          ...(body.status && { status: body.status }),
-          ...(body.outcome !== undefined && { outcome: body.outcome }),
-          ...(body.notes !== undefined && { notes: body.notes }),
+          ...(parsed.status && { status: parsed.status }),
+          ...(parsed.outcome !== undefined && { outcome: parsed.outcome }),
+          ...(parsed.notes !== undefined && { notes: parsed.notes }),
         }
       }
       return item
     })
 
-    // Lead items'da yoksa ekle
     if (!found) {
-      items.push({
-        leadId: lead_id,
-        order: items.length + 1,
-        businessName: '',
-        phone: null,
-        needScore: 0,
-        status: body.status ?? 'PENDING',
-        outcome: body.outcome,
-        notes: body.notes,
-      })
+      return NextResponse.json(
+        { error: `Bu lead secilen arama listesinde bulunamadi (tarih: ${date})` },
+        { status: 404 }
+      )
     }
 
     const completedItems = items.filter(
@@ -105,16 +106,45 @@ export async function PATCH(
       return NextResponse.json({ error: 'Güncelleme başarısız' }, { status: 500 })
     }
 
+    // Assignment status'ünü senkronize et
+    if (parsed.status) {
+      const assignmentStatus = parsed.status === 'PENDING'
+        ? 'PENDING'
+        : parsed.status === 'COMPLETED' || parsed.status === 'INTERESTED'
+          ? 'COMPLETED'
+          : 'IN_PROGRESS'
+
+      serviceClient
+        .from('assignments')
+        .update({ status: assignmentStatus })
+        .eq('lead_id', lead_id)
+        .eq('agent_id', agent.id)
+        .eq('assignment_type', 'CALL')
+        .then(({ error: assignErr }) => {
+          if (assignErr) {
+            logger.warn('Assignment status güncellenemedi', { error: assignErr.message, lead_id })
+          }
+        })
+    }
+
     logLeadActivity({
       leadId: lead_id,
       activityType: 'CALL_LOGGED',
-      description: `Arama sonucu: ${body.outcome ?? body.status ?? 'güncellendi'}`,
+      description: `Arama sonucu: ${parsed.outcome ?? parsed.status ?? 'guncellendi'}`,
       agentId: agent.id,
-      newValue: body.outcome ?? body.status,
-      metadata: { notes: body.notes },
+      newValue: parsed.outcome ?? parsed.status ?? null,
+      metadata: { notes: parsed.notes ?? null },
     })
 
-    return NextResponse.json({ success: true })
+    const hydratedItems = await hydrateCallListItemsWithInstagram(
+      serviceClient,
+      items
+    )
+
+    return NextResponse.json({
+      success: true,
+      items: hydratedItems,
+    })
   } catch (error) {
     logger.error('My calls lead API hatası', { error: String(error) })
     return NextResponse.json({ error: 'Sunucu hatası' }, { status: 500 })

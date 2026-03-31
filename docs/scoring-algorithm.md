@@ -72,7 +72,7 @@ Esik degerleri (`src/lib/constants.ts`):
 
 | Puan Araligi | Oneri | Aksiyon |
 |-------------|-------|---------|
-| 65-100 | HIGH_PRIORITY | Saha ziyareti (Pazartesi/Carsamba) |
+| 65-100 | HIGH_PRIORITY | Manuel telefon listesinde once ara |
 | 40-64 | MEDIUM | Telefon aramasi (Sali/Persembe) |
 | 15-39 | LOW_PRIORITY | Otonom temas |
 | 0-14 | SKIP | Pas gec |

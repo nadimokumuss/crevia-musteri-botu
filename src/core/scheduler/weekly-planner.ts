@@ -1,15 +1,13 @@
 /**
  * Haftalık planlayıcı - Gün tipi belirleme
  *
- * Pazartesi-Cuma: FIELD (saha ziyareti + telefon araması)
+ * Pazartesi-Cuma: REMOTE (telefon aramasi)
  * Cumartesi/Pazar: OFF
- *
- * FIELD_AGENT: Pzt-Cum 5 gün saha ziyareti (günde 10)
- * TELESALES_AGENT: Pzt-Cum 5 gün telefon araması (günde 20)
  */
 
 import type { DayType } from '@/types/schedule'
 import { DAY_INDEX_TO_TYPE } from '@/lib/constants'
+import { getTodayDateInIstanbul, parseIstanbulDate } from '@/lib/date-utils'
 
 /**
  * Verilen tarih için gün tipini döndür
@@ -20,7 +18,8 @@ export function getDayType(date: Date): DayType {
 }
 
 /**
- * Verilen tarih saha günü mü?
+ * Legacy uyumluluk yardimcisi.
+ * Guncel takvimde saha gunu yoktur.
  */
 export function isFieldDay(date: Date): boolean {
   return getDayType(date) === 'FIELD'
@@ -34,7 +33,7 @@ export function isRemoteDay(date: Date): boolean {
 }
 
 /**
- * Verilen tarih çalışma günü mü? (FIELD, REMOTE veya ADMIN)
+ * Verilen tarih calisma gunu mu?
  */
 export function isWorkDay(date: Date): boolean {
   const type = getDayType(date)
@@ -64,14 +63,12 @@ export function getWorkDays(start: Date, end: Date): { date: Date; type: DayType
 }
 
 /**
- * Bugünün tarih ve gün tipini döndür (Istanbul UTC+3)
- * OFF günlerde null döndürür
+ * Bugunun tarih ve gun tipini dondurur (Istanbul)
+ * OFF gunlerde null dondurur.
  */
 export function getTodayPlan(): { date: string; type: DayType } | null {
-  const istanbulOffset = 3 * 60 * 60 * 1000
-  const istanbulNow = new Date(Date.now() + istanbulOffset)
-  const dateStr = istanbulNow.toISOString().split('T')[0]
-  const type = getDayType(new Date(dateStr + 'T00:00:00'))
+  const dateStr = getTodayDateInIstanbul()
+  const type = getDayType(parseIstanbulDate(dateStr))
   if (type === 'OFF') return null
   return { date: dateStr, type }
 }

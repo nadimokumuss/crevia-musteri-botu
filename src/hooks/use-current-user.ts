@@ -36,7 +36,7 @@ function fetchUser(): Promise<CurrentUser | null> {
         id: user.id,
         email: user.email ?? '',
         fullName: user.user_metadata?.full_name ?? '',
-        role: (user.user_metadata?.role as AgentRole) ?? 'FIELD_AGENT',
+        role: (user.user_metadata?.role as AgentRole) ?? 'TELESALES_AGENT',
         winxFairy: (user.user_metadata?.winx_fairy as string) ?? null,
       }
       return cachedUser

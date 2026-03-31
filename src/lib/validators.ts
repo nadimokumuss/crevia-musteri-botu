@@ -43,7 +43,7 @@ export const updateLeadSchema = z.object({
   website: z.string().url().nullable().optional(),
   lat: z.number().min(-90).max(90).nullable().optional(),
   lng: z.number().min(-180).max(180).nullable().optional(),
-  status: z.enum(['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL', 'WON', 'LOST']).optional(),
+  status: z.enum(['NEW', 'CONTACTED', 'QUALIFIED', 'PROPOSAL', 'WON', 'LOST', 'SKIP']).optional(),
   notes: z.string().max(5000).nullable().optional(),
   recommendation: z.enum(['HIGH_PRIORITY', 'MEDIUM', 'LOW_PRIORITY', 'SKIP']).nullable().optional(),
 }).strict() // Bilinmeyen alanları reddet

@@ -1,6 +1,9 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerSupabaseClient, createServiceRoleClient } from '@/infra/supabase/server'
+import { hydrateCallListItemsWithInstagram } from '@/infra/supabase/hydrate-call-list-items'
+import { getTodayDateInIstanbul } from '@/lib/date-utils'
 import { logger } from '@/lib/logger'
+import type { CallListItem } from '@/types/call'
 
 export async function GET(request: NextRequest) {
   try {
@@ -24,11 +27,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Ajan kaydı bulunamadı' }, { status: 404 })
     }
 
-    // Tarih parametresi: varsa kullan, yoksa bugün (Istanbul UTC+3)
+    // Tarih parametresi: varsa kullan, yoksa bugün (Istanbul)
     const { searchParams } = new URL(request.url)
-    const istanbulOffset = 3 * 60 * 60 * 1000
-    const istanbulToday = new Date(Date.now() + istanbulOffset).toISOString().split('T')[0]
-    const date = searchParams.get('date') ?? istanbulToday
+    const date = searchParams.get('date') ?? getTodayDateInIstanbul()
 
     const { data: callList } = await serviceClient
       .from('call_lists')
@@ -41,9 +42,13 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(null)
     }
 
+    const hydratedItems = await hydrateCallListItemsWithInstagram(
+      serviceClient,
+      (callList.items as CallListItem[])
+    )
+
     // Telefonsuz lead'leri listeden filtrele
-    const items = (callList.items as Array<{ phone: string | null; [key: string]: unknown }>)
-      .filter((item) => item.phone !== null)
+    const items = hydratedItems.filter((item) => item.phone !== null)
     const filtered = {
       ...callList,
       items,

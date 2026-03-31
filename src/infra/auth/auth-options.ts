@@ -25,7 +25,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
 
   if (error || !user) return null
 
-  const role = (user.user_metadata?.role as AgentRole) ?? 'FIELD_AGENT'
+  const role = (user.user_metadata?.role as AgentRole) ?? 'TELESALES_AGENT'
 
   // Agent kaydını bul
   const { data: agent } = await supabase
@@ -62,7 +62,6 @@ export function isAdmin(user: AuthUser): boolean {
 export const PAGE_PERMISSIONS: Record<string, AgentRole[]> = {
   '/admin': ['ADMIN'],
   '/agents': ['ADMIN'],
-  '/hunter': ['ADMIN'],
   '/settings': ['ADMIN'],
   '/leads': ['ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT'],
   '/routes': ['ADMIN', 'FIELD_AGENT'],

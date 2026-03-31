@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { generateCallList, getCompletionRate, getNextPendingCall } from '@/core/routing/call-list-generator'
+import {
+  generateCallList,
+  getCompletionRate,
+  getNextPendingCall,
+  selectCallLeadCandidates,
+} from '@/core/routing/call-list-generator'
 
 describe('generateCallList', () => {
   const mockLeads = [
@@ -101,5 +106,33 @@ describe('getNextPendingCall', () => {
     ]
 
     expect(getNextPendingCall(items)).toBeNull()
+  })
+})
+
+describe('selectCallLeadCandidates', () => {
+  const leads = [
+    { id: '1', businessName: 'A', phone: '555-0001', needScore: 80, districtId: 'kadikoy', category: 'Kafe' },
+    { id: '2', businessName: 'B', phone: '555-0002', needScore: 70, districtId: 'besiktas', category: 'Restoran' },
+    { id: '3', businessName: 'C', phone: '555-0003', needScore: 60, districtId: 'kadikoy', category: 'Restoran' },
+  ]
+
+  it('daha once atanmis leadleri hariç tutar', () => {
+    const selected = selectCallLeadCandidates(leads, {
+      excludedLeadIds: ['1'],
+      maxItems: 5,
+    })
+
+    expect(selected.map((lead) => lead.id)).toEqual(['2', '3'])
+  })
+
+  it('ajan ilce ve kategori tercihlerine gore filtreler', () => {
+    const selected = selectCallLeadCandidates(leads, {
+      districtIds: ['kadikoy'],
+      categories: ['Restoran'],
+      maxItems: 5,
+    })
+
+    expect(selected).toHaveLength(1)
+    expect(selected[0].id).toBe('3')
   })
 })

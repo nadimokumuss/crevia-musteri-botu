@@ -74,10 +74,10 @@ export default function LeadDetailPage({ params }: { params: Promise<{ id: strin
             <p className="text-sm text-muted-foreground">Toplam Puan</p>
             <div className="mt-2">
               <Badge variant="secondary">
-                {lead.recommendation === 'HIGH_PRIORITY' && 'Saha Ziyareti'}
-                {lead.recommendation === 'MEDIUM' && 'Telefon Arama'}
-                {lead.recommendation === 'LOW_PRIORITY' && 'Otonom Temas'}
-                {lead.recommendation === 'SKIP' && 'Pas Geç'}
+                {lead.recommendation === 'HIGH_PRIORITY' && 'Oncelikli Arama'}
+                {lead.recommendation === 'MEDIUM' && 'Planli Arama'}
+                {lead.recommendation === 'LOW_PRIORITY' && 'Takip Havuzu'}
+                {lead.recommendation === 'SKIP' && 'Pas Gec'}
               </Badge>
             </div>
           </CardContent>

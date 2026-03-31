@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,6 +16,7 @@ import {
 import { NotesDialog } from '@/components/shared/notes-dialog'
 import { PreferencesBanner } from '@/components/shared/preferences-banner'
 import { CallExportButtons } from '@/components/calls/call-export-buttons'
+import { getTodayDateInIstanbul } from '@/lib/date-utils'
 import type { CallListItem } from '@/types/call'
 
 // Instagram ikonu (SVG)
@@ -24,6 +25,25 @@ function InstagramIcon({ className }: { className?: string }) {
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
     </svg>
+  )
+}
+
+function InstagramLink({ username }: { username?: string | null }) {
+  if (!username) {
+    return <span className="text-xs text-muted-foreground">Instagram yok</span>
+  }
+
+  return (
+    <a
+      href={`https://instagram.com/${username}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex items-center gap-1 text-pink-600 hover:text-pink-700"
+      title={`@${username}`}
+    >
+      <InstagramIcon className="h-4 w-4" />
+      <span>@{username}</span>
+    </a>
   )
 }
 
@@ -50,8 +70,9 @@ export default function MyCallsPage() {
   const [callList, setCallList] = useState<MyCallListData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [notesTarget, setNotesTarget] = useState<{ leadId: string; notes: string } | null>(null)
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [selectedDate, setSelectedDate] = useState(() => getTodayDateInIstanbul())
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [prioritizeInstagram, setPrioritizeInstagram] = useState(true)
 
   useEffect(() => {
     loadCallList()
@@ -129,14 +150,31 @@ export default function MyCallsPage() {
     }
   }
 
-  if (isLoading) {
-    return <div className="py-12 text-center text-muted-foreground">Yükleniyor...</div>
-  }
+  const visibleItems = useMemo(() => {
+    const currentItems = callList?.items ?? []
 
-  const items = callList?.items ?? []
+    if (!prioritizeInstagram) {
+      return currentItems
+    }
+
+    return [...currentItems].sort((left, right) => {
+      const leftHasInstagram = Boolean(left.igUsername)
+      const rightHasInstagram = Boolean(right.igUsername)
+
+      if (leftHasInstagram === rightHasInstagram) {
+        return left.order - right.order
+      }
+
+      return leftHasInstagram ? -1 : 1
+    })
+  }, [callList?.items, prioritizeInstagram])
   const completionRate = callList
     ? Math.round((callList.completed_items / Math.max(callList.total_items, 1)) * 100)
     : 0
+
+  if (isLoading) {
+    return <div className="py-12 text-center text-muted-foreground">Yükleniyor...</div>
+  }
 
   return (
     <div className="space-y-6">
@@ -156,12 +194,23 @@ export default function MyCallsPage() {
             {callList ? `${callList.list_date} tarihli arama listesi` : 'Seçili tarih için arama listesi yok'}
           </p>
         </div>
-        <Input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          className="w-full md:w-44"
-        />
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={prioritizeInstagram}
+              onChange={(event) => setPrioritizeInstagram(event.target.checked)}
+              className="h-4 w-4 rounded border-input"
+            />
+            Instagram hesabı olanları üste al
+          </label>
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-full md:w-44"
+          />
+        </div>
       </div>
 
       {callList && (
@@ -178,12 +227,12 @@ export default function MyCallsPage() {
                 <CardTitle>Arama Listesi</CardTitle>
                 <CardDescription>İşlemler sütunundan sonucu değiştirin</CardDescription>
               </div>
-              <CallExportButtons items={items} listDate={selectedDate} />
+              <CallExportButtons items={visibleItems} listDate={selectedDate} />
             </CardHeader>
             <CardContent className="space-y-3 md:space-y-0">
               {/* Mobil: Kart bazlı */}
               <div className="md:hidden space-y-3">
-                {items.map((item) => {
+                {visibleItems.map((item) => {
                   const statusInfo = CALL_OUTCOMES.find((o) => o.value === item.status)
                   return (
                     <div key={item.leadId} className="rounded-lg border p-3 space-y-2">
@@ -198,18 +247,8 @@ export default function MyCallsPage() {
                           <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                             {item.phone ? (
                               <a href={`tel:${item.phone}`} className="text-blue-600 underline">{item.phone}</a>
-                            ) : null}
-                            {item.igUsername && (
-                              <a
-                                href={`https://instagram.com/${item.igUsername}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-pink-600 hover:text-pink-700"
-                                title={`@${item.igUsername}`}
-                              >
-                                <InstagramIcon className="h-4 w-4" />
-                              </a>
-                            )}
+                            ) : <span>Telefon yok</span>}
+                            <InstagramLink username={item.igUsername} />
                             <span className="font-bold text-foreground">{item.needScore}p</span>
                           </div>
                         </div>
@@ -218,6 +257,14 @@ export default function MyCallsPage() {
                         </Badge>
                       </div>
                       <div className="flex items-center gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!item.igUsername}
+                          onClick={() => item.igUsername && window.open(`https://instagram.com/${item.igUsername}`, '_blank', 'noopener,noreferrer')}
+                        >
+                          IG Aç
+                        </Button>
                         <Select
                           value={item.status}
                           onValueChange={(val) => {
@@ -250,15 +297,14 @@ export default function MyCallsPage() {
                     <tr className="border-b text-left text-sm font-medium text-muted-foreground">
                       <th className="pb-2 w-12">Sıra</th>
                       <th className="pb-2">İşletme</th>
-                      <th className="pb-2">Telefon</th>
-                      <th className="pb-2 text-center">IG</th>
+                      <th className="pb-2">Telefon / Instagram</th>
                       <th className="pb-2 text-center">Puan</th>
                       <th className="pb-2">Durum</th>
                       <th className="pb-2">İşlemler</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((item) => {
+                    {visibleItems.map((item) => {
                       const statusInfo = CALL_OUTCOMES.find((o) => o.value === item.status)
                       return (
                         <tr key={item.leadId} className="border-b">
@@ -267,22 +313,14 @@ export default function MyCallsPage() {
                             <Link href={`/leads/${item.leadId}`} className="text-blue-600 hover:underline">{item.businessName}</Link>
                           </td>
                           <td className="py-3">
-                            {item.phone ? <a href={`tel:${item.phone}`} className="text-blue-600 underline">{item.phone}</a> : '-'}
-                          </td>
-                          <td className="py-3 text-center">
-                            {item.igUsername ? (
-                              <a
-                                href={`https://instagram.com/${item.igUsername}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center justify-center text-pink-600 hover:text-pink-700"
-                                title={`@${item.igUsername}`}
-                              >
-                                <InstagramIcon className="h-5 w-5" />
-                              </a>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
+                            <div className="flex flex-col gap-1">
+                              {item.phone ? (
+                                <a href={`tel:${item.phone}`} className="text-blue-600 underline">{item.phone}</a>
+                              ) : (
+                                <span className="text-muted-foreground">Telefon yok</span>
+                              )}
+                              <InstagramLink username={item.igUsername} />
+                            </div>
                           </td>
                           <td className="py-3 text-center font-bold">{item.needScore}</td>
                           <td className="py-3">
@@ -290,6 +328,14 @@ export default function MyCallsPage() {
                           </td>
                           <td className="py-3">
                             <div className="flex items-center gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!item.igUsername}
+                                onClick={() => item.igUsername && window.open(`https://instagram.com/${item.igUsername}`, '_blank', 'noopener,noreferrer')}
+                              >
+                                IG Aç
+                              </Button>
                               <Select
                                 value={item.status}
                                 onValueChange={(val) => {

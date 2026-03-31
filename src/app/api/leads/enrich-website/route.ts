@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceRoleClient } from '@/infra/supabase/server'
 import { PageSpeedAdapter } from '@/infra/website/pagespeed.adapter'
+import { calculateNeedScore } from '@/core/scoring/need-score'
+import { buildAllSignals } from '@/lib/signal-builders'
 import { logger } from '@/lib/logger'
 import type { Lead } from '@/types/database'
 
@@ -65,6 +67,33 @@ export async function POST(request: NextRequest) {
         if (updateError) {
           logger.warn('Website zenginleştirme güncelleme hatası', { leadId: lead.id, error: updateError.message })
         } else {
+          const rescoredLead = {
+            ...lead,
+            ...updateData,
+            email: (updateData.email as string | undefined) ?? lead.email,
+            email_source: (updateData.email_source as Lead['email_source'] | undefined) ?? lead.email_source,
+          } as Lead
+
+          const score = calculateNeedScore(buildAllSignals(rescoredLead))
+          const { error: scoreError } = await supabase
+            .from('leads')
+            .update({
+              need_score: score.totalScore,
+              google_sub_score: score.googleSubScore,
+              instagram_sub_score: score.instagramSubScore,
+              website_sub_score: score.websiteSubScore,
+              marketing_sub_score: score.marketingSubScore,
+              recommendation: score.recommendation,
+            })
+            .eq('id', lead.id)
+
+          if (scoreError) {
+            logger.warn('Website sonrasi puan guncellenemedi', {
+              leadId: lead.id,
+              error: scoreError.message,
+            })
+          }
+
           enriched++
         }
       } catch (err) {

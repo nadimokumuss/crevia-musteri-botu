@@ -23,10 +23,10 @@ const STATUS_LABELS: Record<string, string> = {
 }
 
 const RECOMMENDATION_LABELS: Record<string, string> = {
-  HIGH_PRIORITY: 'Yüksek Öncelik',
-  MEDIUM: 'Orta',
-  LOW_PRIORITY: 'Düşük Öncelik',
-  SKIP: 'Atla',
+  HIGH_PRIORITY: 'Oncelikli Arama',
+  MEDIUM: 'Planli Arama',
+  LOW_PRIORITY: 'Takip Havuzu',
+  SKIP: 'Pas Gec',
 }
 
 const CALL_STATUS_LABELS: Record<string, string> = {
@@ -59,8 +59,6 @@ export async function GET(request: Request) {
     const defaultStart = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
     const startDate = searchParams.get('startDate') || defaultStart
     const endDate = searchParams.get('endDate') || defaultEnd
-    const endDateTime = endDate + 'T23:59:59'
-
     const thisWeekStart = getWeekStart(now)
     const lastWeekStart = getWeekStart(new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000))
 
@@ -204,11 +202,12 @@ export async function GET(request: Request) {
       completionRate: p.totalAssignments > 0 ? Math.round((p.completedAssignments / p.totalAssignments) * 100) : 0,
     }))
 
-    // --- Call Outcomes ---
+    // --- Call Outcomes (PENDING hariç, sadece sonuçlananlar) ---
     const callStatusMap = new Map<string, number>()
     for (const cl of callLists) {
       const items = (cl.items ?? []) as Array<{ status: string }>
       for (const item of items) {
+        if (item.status === 'PENDING') continue
         callStatusMap.set(item.status, (callStatusMap.get(item.status) ?? 0) + 1)
       }
     }

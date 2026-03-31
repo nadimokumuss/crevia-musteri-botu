@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
+import Image from 'next/image'
 import { WINX_FAIRIES } from '@/lib/constants'
 
 interface WinxCelebrationProps {
@@ -78,9 +79,11 @@ export function WinxCelebration({ fairyId, statusLabel, onComplete }: WinxCelebr
           }}
         />
 
-        <img
+        <Image
           src={fairy.image}
           alt={fairy.name}
+          width={128}
+          height={128}
           className="relative h-32 w-32 rounded-full object-cover"
           style={{ filter: `drop-shadow(0 0 20px ${fairy.color})` }}
         />

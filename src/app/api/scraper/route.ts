@@ -45,9 +45,36 @@ export async function POST(request: NextRequest) {
     }
 
     // Senkron çalıştır — fonksiyon iş bitene kadar hayatta kalır
-    await runScrapeJob(job.id, parsed.district_id, parsed.source_adapter, parsed.category, skipInstagram, parsed.limit)
+    const result = await runScrapeJob(
+      job.id,
+      parsed.district_id,
+      parsed.source_adapter,
+      parsed.category,
+      skipInstagram,
+      parsed.limit
+    )
 
-    return NextResponse.json({ jobId: job.id, status: 'COMPLETED' }, { status: 201 })
+    if (result.status === 'FAILED') {
+      return NextResponse.json(
+        {
+          jobId: job.id,
+          status: result.status,
+          error: result.errorMessage,
+        },
+        { status: 502 }
+      )
+    }
+
+    return NextResponse.json(
+      {
+        jobId: job.id,
+        status: result.status,
+        leadsFound: result.leadsFound,
+        leadsNew: result.leadsNew,
+        leadsUpdated: result.leadsUpdated,
+      },
+      { status: 201 }
+    )
   } catch (error) {
     logger.error('Scraper API hatası', { error: String(error) })
     return NextResponse.json(
@@ -256,6 +283,13 @@ async function runScrapeJob(
       .eq('id', jobId)
 
     logger.info('Scrape job tamamlandı', { jobId, leadsNew, leadsUpdated })
+    return {
+      status: 'COMPLETED' as const,
+      leadsFound: result.totalFound,
+      leadsNew,
+      leadsUpdated,
+      errorMessage: null,
+    }
   } catch (error) {
     await supabase
       .from('scrape_jobs')
@@ -267,6 +301,13 @@ async function runScrapeJob(
       .eq('id', jobId)
 
     logger.error('Scrape job başarısız', { jobId, error: String(error) })
+    return {
+      status: 'FAILED' as const,
+      leadsFound: 0,
+      leadsNew: 0,
+      leadsUpdated: 0,
+      errorMessage: error instanceof Error ? error.message : 'Bilinmeyen hata',
+    }
   }
 }
 

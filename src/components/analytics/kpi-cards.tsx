@@ -43,7 +43,7 @@ export function KPICards({ data }: KPICardsProps) {
     {
       title: 'Aktif Ajan',
       value: data.activeAgents,
-      description: 'Aktif saha ve telefon ajanları',
+      description: 'Aktif telefon ajanlari ve yoneticiler',
     },
   ]
 

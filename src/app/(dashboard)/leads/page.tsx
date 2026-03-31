@@ -32,10 +32,10 @@ interface District {
 }
 
 const RECOMMENDATION_CONFIG: Record<LeadRecommendation, { label: string; className: string }> = {
-  HIGH_PRIORITY: { label: 'Saha Ziyareti', className: 'bg-red-100 text-red-800' },
-  MEDIUM: { label: 'Telefon Arama', className: 'bg-yellow-100 text-yellow-800' },
-  LOW_PRIORITY: { label: 'Otonom Temas', className: 'bg-blue-100 text-blue-800' },
-  SKIP: { label: 'Pas Geç', className: 'bg-gray-100 text-gray-800' },
+  HIGH_PRIORITY: { label: 'Oncelikli Arama', className: 'bg-red-100 text-red-800' },
+  MEDIUM: { label: 'Planli Arama', className: 'bg-yellow-100 text-yellow-800' },
+  LOW_PRIORITY: { label: 'Takip Havuzu', className: 'bg-blue-100 text-blue-800' },
+  SKIP: { label: 'Pas Gec', className: 'bg-gray-100 text-gray-800' },
 }
 
 const STATUS_CONFIG: Record<LeadStatus, { label: string; className: string }> = {
@@ -215,10 +215,10 @@ export default function LeadsPage() {
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">Tümü</SelectItem>
-                  <SelectItem value="HIGH_PRIORITY">Saha Ziyareti</SelectItem>
-                  <SelectItem value="MEDIUM">Telefon Arama</SelectItem>
-                  <SelectItem value="LOW_PRIORITY">Otonom Temas</SelectItem>
-                  <SelectItem value="SKIP">Pas Geç</SelectItem>
+                  <SelectItem value="HIGH_PRIORITY">Oncelikli Arama</SelectItem>
+                  <SelectItem value="MEDIUM">Planli Arama</SelectItem>
+                  <SelectItem value="LOW_PRIORITY">Takip Havuzu</SelectItem>
+                  <SelectItem value="SKIP">Pas Gec</SelectItem>
                 </SelectContent>
               </Select>
             </div>

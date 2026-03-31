@@ -32,11 +32,11 @@ export async function GET() {
         .from('leads')
         .select('id', { count: 'exact', head: true })
         .eq('status', 'CONTACTED'),
-      // Ziyaret Edilen (assignments tablosundan)
+      // Tamamlanan aramalar (assignments tablosundan)
       supabase
         .from('assignments')
         .select('id', { count: 'exact', head: true })
-        .eq('assignment_type', 'VISIT')
+        .eq('assignment_type', 'CALL')
         .eq('status', 'COMPLETED'),
       // Teklif Bırakılan
       supabase

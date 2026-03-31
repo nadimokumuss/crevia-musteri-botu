@@ -221,14 +221,15 @@ describe('Full Pipeline: Scraping -> Scoring -> Clustering -> Routing -> Assignm
     expect(getDayType(monday)).toBe('REMOTE')
     expect(isRemoteDay(monday)).toBe(true)
 
-    // Salı = FIELD -> rota optimizasyonu
+    // Salı = REMOTE -> telefon günü devam eder
     const tuesday = new Date(2026, 1, 17)
-    expect(getDayType(tuesday)).toBe('FIELD')
-    expect(isFieldDay(tuesday)).toBe(true)
+    expect(getDayType(tuesday)).toBe('REMOTE')
+    expect(isFieldDay(tuesday)).toBe(false)
+    expect(isRemoteDay(tuesday)).toBe(true)
 
-    // Cuma = ADMIN -> idari (dağıtım yapılır)
+    // Cuma = REMOTE -> hafta içi arama günü
     const friday = new Date(2026, 1, 20)
-    expect(getDayType(friday)).toBe('ADMIN')
+    expect(getDayType(friday)).toBe('REMOTE')
   })
 
   // TAM PIPELINE: Uçtan uca
@@ -271,7 +272,7 @@ describe('Full Pipeline: Scraping -> Scoring -> Clustering -> Routing -> Assignm
         { agentId: 'saha-1', maxDaily: 10, currentLoad: 0 },
         { agentId: 'saha-2', maxDaily: 10, currentLoad: 0 },
       ],
-      assignmentType: 'VISIT',
+      assignmentType: 'CALL',
     })
 
     const totalAssigned = [...distribution.assignments.values()].flat().length

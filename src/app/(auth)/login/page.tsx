@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get('redirect') ?? '/leads'
+  const redirectTo = searchParams.get('redirect') ?? '/my/calls'
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -58,7 +58,7 @@ function LoginForm() {
         options: {
           data: {
             full_name: fullName,
-            role: 'FIELD_AGENT',
+            role: 'TELESALES_AGENT',
           },
         },
       })

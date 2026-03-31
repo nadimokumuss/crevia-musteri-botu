@@ -24,7 +24,7 @@ export default function DashboardError({
             <Button onClick={reset} variant="outline">
               Tekrar Dene
             </Button>
-            <Button onClick={() => (window.location.href = '/leads')} variant="ghost">
+            <Button onClick={() => (window.location.href = '/my/calls')} variant="ghost">
               Ana Sayfa
             </Button>
           </div>

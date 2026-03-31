@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Image from 'next/image'
 import { createClient } from '@/infra/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -55,7 +56,7 @@ export default function SettingsPage() {
             id: user.id,
             email: user.email ?? '',
             full_name: user.user_metadata?.full_name ?? '',
-            role: user.user_metadata?.role ?? 'FIELD_AGENT',
+            role: user.user_metadata?.role ?? 'TELESALES_AGENT',
             agent_id: agent?.id ?? null,
           })
           setFullName(user.user_metadata?.full_name ?? '')
@@ -277,7 +278,13 @@ export default function SettingsPage() {
                       : undefined
                   }
                 >
-                  <img src={fairy.image} alt={fairy.name} className="h-20 w-20 rounded-full object-cover" />
+                  <Image
+                    src={fairy.image}
+                    alt={fairy.name}
+                    width={80}
+                    height={80}
+                    className="h-20 w-20 rounded-full object-cover"
+                  />
                   <span className="text-sm font-bold" style={{ color: selectedFairy === fairy.id ? fairy.color : undefined }}>
                     {fairy.name}
                   </span>
@@ -305,7 +312,7 @@ export default function SettingsPage() {
           <CardHeader>
             <CardTitle>Çalışma Tercihleri</CardTitle>
             <CardDescription>
-              Haftalık plan oluşturulurken hangi ilçe ve sektörlerde çalışmak istediğinizi belirleyin
+              Yonetici manuel arama listesi olustururken hangi ilce ve sektorleri onceleyecegini belirleyin
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -341,7 +348,7 @@ export default function SettingsPage() {
 
             <Button
               onClick={handleSavePreferences}
-              disabled={isSavingPrefs || selectedDistricts.length === 0}
+              disabled={isSavingPrefs}
             >
               {isSavingPrefs ? 'Kaydediliyor...' : 'Tercihleri Kaydet'}
             </Button>
