@@ -53,6 +53,38 @@ export function extractInstagramFromUrl(url: string): string | null {
 }
 
 /**
+ * Kullanıcı adı veya Instagram URL'sinden güvenli profil kullanıcı adını çıkar.
+ * "@modacafe", "instagram.com/modacafe", "https://instagram.com/modacafe/" → "modacafe"
+ */
+export function normalizeInstagramUsername(value: string | null | undefined): string | null {
+  if (!value) return null
+
+  const trimmed = value.trim()
+  if (!trimmed) return null
+
+  const extractedFromUrl = extractInstagramFromUrl(trimmed)
+  if (extractedFromUrl) {
+    return extractedFromUrl
+  }
+
+  const candidate = trimmed
+    .replace(/^@+/, '')
+    .replace(/^\/+|\/+$/g, '')
+    .toLowerCase()
+
+  if (!candidate || candidate.length > 30) {
+    return null
+  }
+
+  return /^[a-z0-9._]+$/.test(candidate) ? candidate : null
+}
+
+export function getInstagramProfileUrl(value: string | null | undefined): string | null {
+  const username = normalizeInstagramUsername(value)
+  return username ? `https://instagram.com/${username}` : null
+}
+
+/**
  * HTML içeriğinden Instagram linklerini bul.
  * Ortak yanlışları filtreler: /p/, /reel/, /explore/ vb.
  */

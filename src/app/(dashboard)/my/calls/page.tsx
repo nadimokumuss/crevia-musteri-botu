@@ -17,6 +17,7 @@ import { NotesDialog } from '@/components/shared/notes-dialog'
 import { PreferencesBanner } from '@/components/shared/preferences-banner'
 import { CallExportButtons } from '@/components/calls/call-export-buttons'
 import { getTodayDateInIstanbul } from '@/lib/date-utils'
+import { getInstagramProfileUrl, normalizeInstagramUsername } from '@/lib/instagram-utils'
 import type { CallListItem } from '@/types/call'
 
 // Instagram ikonu (SVG)
@@ -29,20 +30,23 @@ function InstagramIcon({ className }: { className?: string }) {
 }
 
 function InstagramLink({ username }: { username?: string | null }) {
-  if (!username) {
+  const normalizedUsername = normalizeInstagramUsername(username)
+  const instagramUrl = getInstagramProfileUrl(username)
+
+  if (!normalizedUsername || !instagramUrl) {
     return <span className="text-xs text-muted-foreground">Instagram yok</span>
   }
 
   return (
     <a
-      href={`https://instagram.com/${username}`}
+      href={instagramUrl}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1 text-pink-600 hover:text-pink-700"
-      title={`@${username}`}
+      title={`@${normalizedUsername}`}
     >
       <InstagramIcon className="h-4 w-4" />
-      <span>@{username}</span>
+      <span>@{normalizedUsername}</span>
     </a>
   )
 }
@@ -293,14 +297,21 @@ export default function MyCallsPage() {
                         </Badge>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!item.igUsername}
-                          onClick={() => item.igUsername && window.open(`https://instagram.com/${item.igUsername}`, '_blank', 'noopener,noreferrer')}
-                        >
-                          IG Aç
-                        </Button>
+                        {getInstagramProfileUrl(item.igUsername) ? (
+                          <Button asChild variant="outline" size="sm">
+                            <a
+                              href={getInstagramProfileUrl(item.igUsername)!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              IG Aç
+                            </a>
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" disabled>
+                            IG Aç
+                          </Button>
+                        )}
                         <Select
                           value={item.status}
                           onValueChange={(val) => {
@@ -364,14 +375,21 @@ export default function MyCallsPage() {
                           </td>
                           <td className="py-3">
                             <div className="flex items-center gap-1">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                disabled={!item.igUsername}
-                                onClick={() => item.igUsername && window.open(`https://instagram.com/${item.igUsername}`, '_blank', 'noopener,noreferrer')}
-                              >
-                                IG Aç
-                              </Button>
+                              {getInstagramProfileUrl(item.igUsername) ? (
+                                <Button asChild variant="outline" size="sm">
+                                  <a
+                                    href={getInstagramProfileUrl(item.igUsername)!}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                  >
+                                    IG Aç
+                                  </a>
+                                </Button>
+                              ) : (
+                                <Button variant="outline" size="sm" disabled>
+                                  IG Aç
+                                </Button>
+                              )}
                               <Select
                                 value={item.status}
                                 onValueChange={(val) => {

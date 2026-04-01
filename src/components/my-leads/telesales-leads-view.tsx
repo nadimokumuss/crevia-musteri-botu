@@ -18,6 +18,7 @@ import { NotesDialog } from '@/components/shared/notes-dialog'
 import { WinxCelebration } from '@/components/shared/winx-celebration'
 import { CallExportButtons } from '@/components/calls/call-export-buttons'
 import { useCurrentUser } from '@/hooks/use-current-user'
+import { getInstagramProfileUrl, normalizeInstagramUsername } from '@/lib/instagram-utils'
 import type { CallListItem } from '@/types/call'
 
 // Instagram ikonu (SVG)
@@ -274,13 +275,13 @@ export function TelesalesLeadsView() {
                           {lead.phone ? (
                             <a href={`tel:${lead.phone}`} className="text-blue-600 underline">{lead.phone}</a>
                           ) : null}
-                          {lead.ig_username && (
+                          {getInstagramProfileUrl(lead.ig_username) && (
                             <a
-                              href={`https://instagram.com/${lead.ig_username}`}
+                              href={getInstagramProfileUrl(lead.ig_username)!}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-pink-600 hover:text-pink-700"
-                              title={`@${lead.ig_username}`}
+                              title={`@${normalizeInstagramUsername(lead.ig_username)}`}
                             >
                               <InstagramIcon className="h-4 w-4" />
                             </a>
@@ -366,13 +367,13 @@ export function TelesalesLeadsView() {
                           ) : '-'}
                         </td>
                         <td className="py-3 text-center">
-                          {lead.ig_username ? (
+                          {getInstagramProfileUrl(lead.ig_username) ? (
                             <a
-                              href={`https://instagram.com/${lead.ig_username}`}
+                              href={getInstagramProfileUrl(lead.ig_username)!}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center justify-center text-pink-600 hover:text-pink-700"
-                              title={`@${lead.ig_username}`}
+                              title={`@${normalizeInstagramUsername(lead.ig_username)}`}
                             >
                               <InstagramIcon className="h-5 w-5" />
                             </a>

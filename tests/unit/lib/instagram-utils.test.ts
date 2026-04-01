@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import {
   normalizeTurkish,
   extractInstagramFromUrl,
+  normalizeInstagramUsername,
+  getInstagramProfileUrl,
   extractInstagramFromHtml,
   guessInstagramCandidates,
   verifyInstagramMatch,
@@ -62,6 +64,35 @@ describe('extractInstagramFromUrl', () => {
   it('path olmayan Instagram URL\'si için null döner', () => {
     expect(extractInstagramFromUrl('https://instagram.com')).toBeNull()
     expect(extractInstagramFromUrl('https://instagram.com/')).toBeNull()
+  })
+})
+
+describe('normalizeInstagramUsername', () => {
+  it('plain username ve @ prefixli değeri normalize eder', () => {
+    expect(normalizeInstagramUsername('modacafe')).toBe('modacafe')
+    expect(normalizeInstagramUsername('@ModaCafe')).toBe('modacafe')
+  })
+
+  it('instagram url değerlerini normalize eder', () => {
+    expect(normalizeInstagramUsername('https://instagram.com/modacafe/')).toBe('modacafe')
+    expect(normalizeInstagramUsername('instagram.com/modacafe')).toBe('modacafe')
+  })
+
+  it('geçersiz değerleri null yapar', () => {
+    expect(normalizeInstagramUsername('')).toBeNull()
+    expect(normalizeInstagramUsername('moda cafe')).toBeNull()
+    expect(normalizeInstagramUsername('https://example.com/modacafe')).toBeNull()
+  })
+})
+
+describe('getInstagramProfileUrl', () => {
+  it('normalize edilmiş profil URLsi üretir', () => {
+    expect(getInstagramProfileUrl('@ModaCafe')).toBe('https://instagram.com/modacafe')
+    expect(getInstagramProfileUrl('https://instagram.com/modacafe/')).toBe('https://instagram.com/modacafe')
+  })
+
+  it('geçersiz değerlerde null döner', () => {
+    expect(getInstagramProfileUrl('not valid')).toBeNull()
   })
 })
 

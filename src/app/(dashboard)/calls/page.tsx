@@ -23,6 +23,7 @@ import {
 import { NotesDialog } from '@/components/shared/notes-dialog'
 import { CallExportButtons } from '@/components/calls/call-export-buttons'
 import { getTodayDateInIstanbul } from '@/lib/date-utils'
+import { getInstagramProfileUrl, normalizeInstagramUsername } from '@/lib/instagram-utils'
 import type { CallList } from '@/types/database'
 import type { CallListItem } from '@/types/call'
 
@@ -41,20 +42,23 @@ function InstagramIcon({ className }: { className?: string }) {
 }
 
 function InstagramLink({ username }: { username?: string | null }) {
-  if (!username) {
+  const normalizedUsername = normalizeInstagramUsername(username)
+  const instagramUrl = getInstagramProfileUrl(username)
+
+  if (!normalizedUsername || !instagramUrl) {
     return <span className="text-xs text-muted-foreground">Instagram yok</span>
   }
 
   return (
     <a
-      href={`https://instagram.com/${username}`}
+      href={instagramUrl}
       target="_blank"
       rel="noopener noreferrer"
       className="inline-flex items-center gap-1 text-pink-600 hover:text-pink-700"
-      title={`@${username}`}
+      title={`@${normalizedUsername}`}
     >
       <InstagramIcon className="h-4 w-4" />
-      <span>@{username}</span>
+      <span>@{normalizedUsername}</span>
     </a>
   )
 }
@@ -455,14 +459,21 @@ export default function CallsPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-wrap gap-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!item.igUsername}
-                          onClick={() => item.igUsername && window.open(`https://instagram.com/${item.igUsername}`, '_blank', 'noopener,noreferrer')}
-                        >
-                          IG Aç
-                        </Button>
+                        {getInstagramProfileUrl(item.igUsername) ? (
+                          <Button asChild size="sm" variant="outline">
+                            <a
+                              href={getInstagramProfileUrl(item.igUsername)!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              IG Aç
+                            </a>
+                          </Button>
+                        ) : (
+                          <Button size="sm" variant="outline" disabled>
+                            IG Aç
+                          </Button>
+                        )}
                         {item.status === 'PENDING' ? (
                           <>
                             <Button
