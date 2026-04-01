@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit -p tsconfig.typecheck.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "deploy:vercel": "node scripts/trigger-vercel-deploy.mjs"

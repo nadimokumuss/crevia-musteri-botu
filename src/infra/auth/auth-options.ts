@@ -3,6 +3,7 @@
  */
 
 import { createServerSupabaseClient } from '@/infra/supabase/server'
+import { PAGE_PERMISSIONS } from '@/core/auth/access-control'
 import type { AgentRole } from '@/types/database'
 
 export interface AuthUser {
@@ -56,14 +57,4 @@ export function isAdmin(user: AuthUser): boolean {
   return user.role === 'ADMIN'
 }
 
-/**
- * Sayfa erişim yetki haritası
- */
-export const PAGE_PERMISSIONS: Record<string, AgentRole[]> = {
-  '/admin': ['ADMIN'],
-  '/agents': ['ADMIN'],
-  '/settings': ['ADMIN'],
-  '/leads': ['ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT'],
-  '/routes': ['ADMIN', 'FIELD_AGENT'],
-  '/calls': ['ADMIN', 'TELESALES_AGENT'],
-}
+export { PAGE_PERMISSIONS }

@@ -56,7 +56,6 @@ export async function PUT(request: NextRequest) {
           agent_id: parsed.agent_id,
           district_ids: parsed.district_ids,
           categories: parsed.categories,
-          updated_at: new Date().toISOString(),
         },
         { onConflict: 'agent_id' }
       )

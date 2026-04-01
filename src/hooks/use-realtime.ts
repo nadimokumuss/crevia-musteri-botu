@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useRef } from 'react'
 import { createClient } from '@/infra/supabase/client'
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
@@ -33,10 +33,36 @@ export function useRealtime<T extends Record<string, unknown>>(
   options: UseRealtimeOptions<T>
 ) {
   const channelRef = useRef<RealtimeChannel | null>(null)
+  const {
+    table,
+    event = '*',
+    schema = 'public',
+    filter,
+    onInsert,
+    onUpdate,
+    onDelete,
+    onChange,
+  } = options
+
+  const handleRealtimeChange = useEffectEvent(
+    (payload: RealtimePostgresChangesPayload<T>) => {
+      onChange?.(payload)
+
+      if (payload.eventType === 'INSERT' && onInsert) {
+        onInsert(payload.new as T)
+      } else if (payload.eventType === 'UPDATE' && onUpdate) {
+        onUpdate({
+          old: payload.old as T,
+          new: payload.new as T,
+        })
+      } else if (payload.eventType === 'DELETE' && onDelete) {
+        onDelete(payload.old as T)
+      }
+    }
+  )
 
   useEffect(() => {
     const supabase = createClient()
-    const { table, event = '*', schema = 'public', filter, onInsert, onUpdate, onDelete, onChange } = options
 
     const channelName = `realtime-${table}-${event}-${filter ?? 'all'}`
 
@@ -54,20 +80,7 @@ export function useRealtime<T extends Record<string, unknown>>(
       .on(
         'postgres_changes' as never,
         channelConfig,
-        (payload: RealtimePostgresChangesPayload<T>) => {
-          onChange?.(payload)
-
-          if (payload.eventType === 'INSERT' && onInsert) {
-            onInsert(payload.new as T)
-          } else if (payload.eventType === 'UPDATE' && onUpdate) {
-            onUpdate({
-              old: payload.old as T,
-              new: payload.new as T,
-            })
-          } else if (payload.eventType === 'DELETE' && onDelete) {
-            onDelete(payload.old as T)
-          }
-        }
+        handleRealtimeChange
       )
       .subscribe()
 
@@ -76,6 +89,5 @@ export function useRealtime<T extends Record<string, unknown>>(
     return () => {
       supabase.removeChannel(channel)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options.table, options.event, options.filter])
+  }, [event, filter, schema, table])
 }

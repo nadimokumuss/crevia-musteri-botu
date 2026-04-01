@@ -18,5 +18,6 @@ export interface LeadActivity {
   new_value: string | null
   metadata: Record<string, unknown>
   created_at: string
+  updated_at: string
   agents?: { full_name: string } | null
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { runInstagramEnrichment } from '@/infra/instagram/enrichment'
+import { logger } from '@/lib/logger'
 import type { Lead } from '@/types/database'
 
 const {
@@ -47,6 +48,8 @@ vi.mock('@/lib/signal-builders', () => ({
   buildMarketingSignals: vi.fn(() => null),
   buildWebsiteSignals: vi.fn(() => null),
 }))
+
+vi.spyOn(logger, 'warn').mockImplementation(() => {})
 
 function createLead(overrides: Partial<Lead> = {}): Lead {
   return {

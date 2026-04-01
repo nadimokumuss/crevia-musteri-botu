@@ -4,12 +4,19 @@ import { logLeadActivity } from '@/infra/supabase/log-activity'
 import { calculateNeedScore } from '@/core/scoring/need-score'
 import { logger } from '@/lib/logger'
 import { buildAllSignals } from '@/lib/signal-builders'
+import { optionalLeadIdsSchema } from '@/lib/validators'
 import type { Lead } from '@/types/database'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const leadIds: string[] | undefined = body.lead_ids
+    const body = await request.json().catch(() => ({}))
+    const parsed = optionalLeadIdsSchema.safeParse(body)
+
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Geçersiz istek gövdesi' }, { status: 400 })
+    }
+
+    const leadIds = parsed.data.lead_ids
 
     const supabase = createServiceRoleClient()
 

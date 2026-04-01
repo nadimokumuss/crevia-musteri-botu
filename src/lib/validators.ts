@@ -128,6 +128,24 @@ export const upsertAgentPreferencesSchema = z.object({
   categories: z.array(z.string().min(1).max(200)).max(20).default([]),
 })
 
+/** Auth role güncelleme */
+export const setUserRoleSchema = z.object({
+  action: z.literal('set-role'),
+  user_id: z.string().uuid(),
+  role: z.enum(['ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT']),
+}).strict()
+
+/** İsteğe bağlı lead ID listesi alan batch işlemleri */
+export const optionalLeadIdsSchema = z.object({
+  lead_ids: z.array(z.string().uuid()).max(500).optional(),
+}).strict()
+
+/** Instagram zenginleştirme batch isteği */
+export const enrichInstagramBatchSchema = z.object({
+  district_id: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(500).optional(),
+}).strict()
+
 /** Haftalık plan oluşturma */
 export const createWeeklyPlanSchema = z.object({
   week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),

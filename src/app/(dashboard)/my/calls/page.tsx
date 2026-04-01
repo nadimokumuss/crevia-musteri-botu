@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -47,6 +47,21 @@ function InstagramLink({ username }: { username?: string | null }) {
   )
 }
 
+async function readErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
+  const data = await response.json().catch(() => null)
+
+  if (
+    data &&
+    typeof data === 'object' &&
+    'error' in data &&
+    typeof data.error === 'string'
+  ) {
+    return data.error
+  }
+
+  return fallbackMessage
+}
+
 interface MyCallListData {
   id: string
   list_date: string
@@ -73,24 +88,45 @@ export default function MyCallsPage() {
   const [selectedDate, setSelectedDate] = useState(() => getTodayDateInIstanbul())
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [prioritizeInstagram, setPrioritizeInstagram] = useState(true)
+  const callListRequestRef = useRef(0)
 
-  useEffect(() => {
-    loadCallList()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate])
-
-  async function loadCallList() {
+  const loadCallList = useCallback(async (date: string) => {
+    const requestId = ++callListRequestRef.current
     setIsLoading(true)
+    setErrorMsg(null)
     try {
-      const response = await fetch(`/api/my/calls?date=${selectedDate}`)
-      if (response.ok) {
-        const data = await response.json() as MyCallListData | null
-        setCallList(data)
+      const response = await fetch(`/api/my/calls?date=${date}`)
+      if (!response.ok) {
+        if (requestId === callListRequestRef.current) {
+          setErrorMsg(await readErrorMessage(
+            response,
+            'Arama listesi alınamadı. Son başarılı veriler gösteriliyor.'
+          ))
+        }
+        return
+      }
+
+      const data = (await response.json()) as MyCallListData | null
+
+      if (requestId !== callListRequestRef.current) {
+        return
+      }
+
+      setCallList(data)
+    } catch {
+      if (requestId === callListRequestRef.current) {
+        setErrorMsg('Sunucuya bağlanılamadı. Son başarılı veriler gösteriliyor.')
       }
     } finally {
-      setIsLoading(false)
+      if (requestId === callListRequestRef.current) {
+        setIsLoading(false)
+      }
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    void loadCallList(selectedDate)
+  }, [loadCallList, selectedDate])
 
   async function updateCallOutcome(leadId: string, status: string, outcome?: string) {
     setErrorMsg(null)

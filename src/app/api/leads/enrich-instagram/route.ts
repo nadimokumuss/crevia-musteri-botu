@@ -6,6 +6,7 @@ import {
   countPendingInstagramLeads,
 } from '@/infra/instagram/pending-leads'
 import { logger } from '@/lib/logger'
+import { enrichInstagramBatchSchema } from '@/lib/validators'
 
 export const maxDuration = 300 // 5 dakika timeout
 
@@ -19,10 +20,15 @@ export const maxDuration = 300 // 5 dakika timeout
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const districtId: string | undefined = body.district_id
-    const batchLimit: number | undefined =
-      typeof body.limit === 'number' && Number.isFinite(body.limit) ? body.limit : undefined
+    const body = await request.json().catch(() => ({}))
+    const parsed = enrichInstagramBatchSchema.safeParse(body)
+
+    if (!parsed.success) {
+      return NextResponse.json({ error: 'Geçersiz istek gövdesi' }, { status: 400 })
+    }
+
+    const districtId = parsed.data.district_id
+    const batchLimit = parsed.data.limit
 
     const supabase = createServiceRoleClient()
     const pendingCount = await countPendingInstagramLeads(supabase, districtId, {

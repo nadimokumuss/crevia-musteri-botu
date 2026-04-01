@@ -8,9 +8,14 @@ DROP TABLE IF EXISTS call_lists CASCADE;
 DROP TABLE IF EXISTS scrape_jobs CASCADE;
 DROP TABLE IF EXISTS routes CASCADE;
 DROP TABLE IF EXISTS assignments CASCADE;
+DROP TABLE IF EXISTS lead_activities CASCADE;
+DROP TABLE IF EXISTS weekly_plans CASCADE;
+DROP TABLE IF EXISTS agent_preferences CASCADE;
 DROP TABLE IF EXISTS leads CASCADE;
 DROP TABLE IF EXISTS agents CASCADE;
 DROP TABLE IF EXISTS districts CASCADE;
+DROP TYPE IF EXISTS activity_type CASCADE;
+DROP TYPE IF EXISTS weekly_plan_status CASCADE;
 DROP TYPE IF EXISTS scrape_job_status CASCADE;
 DROP TYPE IF EXISTS assignment_status CASCADE;
 DROP TYPE IF EXISTS assignment_type CASCADE;
@@ -62,7 +67,7 @@ CREATE POLICY "Districts herkes okuyabilir"
 CREATE POLICY "Districts sadece admin yazabilir"
     ON districts FOR ALL
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 -- ============================================
@@ -103,13 +108,13 @@ CREATE POLICY "Agents herkes okuyabilir"
 CREATE POLICY "Agents admin yazabilir"
     ON agents FOR INSERT
     WITH CHECK (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 CREATE POLICY "Agents admin veya kendisi güncelleyebilir"
     ON agents FOR UPDATE
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
         OR user_id = auth.uid()
     );
 
@@ -126,6 +131,7 @@ CREATE TABLE leads (
     category TEXT,
     address TEXT,
     phone TEXT,
+    email TEXT,
     website TEXT,
     lat DOUBLE PRECISION,
     lng DOUBLE PRECISION,
@@ -135,6 +141,7 @@ CREATE TABLE leads (
     google_photo_count INTEGER,
     google_is_claimed BOOLEAN,
     google_last_updated TIMESTAMPTZ,
+    google_response_rate DOUBLE PRECISION,
     ig_username TEXT,
     ig_discovery_source TEXT CHECK (ig_discovery_source IN ('WEBSITE_URL', 'WEBSITE_HTML', 'CANDIDATE_VERIFIED', 'MANUAL')),
     ig_follower_count INTEGER,
@@ -143,9 +150,22 @@ CREATE TABLE leads (
     ig_last_post_date TIMESTAMPTZ,
     ig_has_highlights BOOLEAN,
     ig_bio_contains_agency BOOLEAN,
+    ig_has_bio_link BOOLEAN,
+    ig_posting_regularity TEXT CHECK (ig_posting_regularity IN ('regular', 'irregular', 'gaps', 'dead')),
+    ig_engagement_rate DOUBLE PRECISION,
+    ig_reels_ratio DOUBLE PRECISION,
+    website_speed_score DOUBLE PRECISION,
+    website_is_mobile_friendly BOOLEAN,
+    website_has_404s BOOLEAN,
+    website_has_meta_pixel BOOLEAN,
+    website_has_ga4 BOOLEAN,
+    has_active_meta_ads BOOLEAN,
+    email_source TEXT CHECK (email_source IN ('website', 'google', 'instagram', 'manual')),
     need_score INTEGER DEFAULT 0 CHECK (need_score >= 0 AND need_score <= 100),
-    google_sub_score INTEGER DEFAULT 0 CHECK (google_sub_score >= 0 AND google_sub_score <= 50),
-    instagram_sub_score INTEGER DEFAULT 0 CHECK (instagram_sub_score >= 0 AND instagram_sub_score <= 50),
+    google_sub_score INTEGER DEFAULT 0 CHECK (google_sub_score >= 0 AND google_sub_score <= 30),
+    instagram_sub_score INTEGER DEFAULT 0 CHECK (instagram_sub_score >= 0 AND instagram_sub_score <= 30),
+    website_sub_score INTEGER DEFAULT 0 CHECK (website_sub_score >= 0 AND website_sub_score <= 30),
+    marketing_sub_score INTEGER DEFAULT 0 CHECK (marketing_sub_score >= 0 AND marketing_sub_score <= 20),
     recommendation lead_recommendation DEFAULT 'SKIP',
     status lead_status NOT NULL DEFAULT 'NEW',
     notes TEXT,
@@ -165,6 +185,7 @@ CREATE INDEX idx_leads_recommendation ON leads(recommendation);
 CREATE INDEX idx_leads_lat_lng ON leads(lat, lng);
 CREATE INDEX idx_leads_google_place_id ON leads(google_place_id);
 CREATE INDEX idx_leads_business_name ON leads(business_name);
+CREATE INDEX idx_leads_ig_discovery_source ON leads(ig_discovery_source);
 
 ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
 
@@ -175,13 +196,13 @@ CREATE POLICY "Leads herkes okuyabilir"
 CREATE POLICY "Leads admin ve ajan yazabilir"
     ON leads FOR INSERT
     WITH CHECK (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) IN ('ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT')
+        ((auth.jwt() -> 'user_metadata') ->> 'role') IN ('ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT')
     );
 
 CREATE POLICY "Leads admin ve ajan güncelleyebilir"
     ON leads FOR UPDATE
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) IN ('ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT')
+        ((auth.jwt() -> 'user_metadata') ->> 'role') IN ('ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT')
     );
 
 -- ============================================
@@ -204,7 +225,7 @@ CREATE TABLE assignments (
     locked_by UUID REFERENCES agents(id),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT unique_lead_date_type UNIQUE (lead_id, scheduled_date, assignment_type)
+    CONSTRAINT unique_lead_single_assignment UNIQUE (lead_id)
 );
 
 CREATE TRIGGER set_assignments_updated_at
@@ -218,13 +239,14 @@ CREATE INDEX idx_assignments_scheduled_date ON assignments(scheduled_date);
 CREATE INDEX idx_assignments_status ON assignments(status);
 CREATE INDEX idx_assignments_type ON assignments(assignment_type);
 CREATE INDEX idx_assignments_agent_date ON assignments(agent_id, scheduled_date);
+CREATE INDEX idx_assignments_lead_unique ON assignments(lead_id);
 
 ALTER TABLE assignments ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Assignments admin herşeyi görebilir"
     ON assignments FOR SELECT
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 CREATE POLICY "Assignments ajan kendi atamalarını görebilir"
@@ -236,13 +258,13 @@ CREATE POLICY "Assignments ajan kendi atamalarını görebilir"
 CREATE POLICY "Assignments admin yazabilir"
     ON assignments FOR INSERT
     WITH CHECK (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 CREATE POLICY "Assignments admin veya atanan ajan güncelleyebilir"
     ON assignments FOR UPDATE
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
         OR agent_id IN (SELECT id FROM agents WHERE user_id = auth.uid())
     );
 
@@ -277,7 +299,7 @@ ALTER TABLE routes ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Routes admin herşeyi görebilir"
     ON routes FOR SELECT
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 CREATE POLICY "Routes ajan kendi rotalarını görebilir"
@@ -289,7 +311,7 @@ CREATE POLICY "Routes ajan kendi rotalarını görebilir"
 CREATE POLICY "Routes admin yazabilir"
     ON routes FOR ALL
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 -- ============================================
@@ -332,7 +354,7 @@ CREATE POLICY "Scrape jobs herkes okuyabilir"
 CREATE POLICY "Scrape jobs admin yazabilir"
     ON scrape_jobs FOR ALL
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 -- ============================================
@@ -364,7 +386,7 @@ ALTER TABLE call_lists ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Call lists admin herşeyi görebilir"
     ON call_lists FOR SELECT
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 CREATE POLICY "Call lists ajan kendi listelerini görebilir"
@@ -376,11 +398,141 @@ CREATE POLICY "Call lists ajan kendi listelerini görebilir"
 CREATE POLICY "Call lists admin yazabilir"
     ON call_lists FOR ALL
     USING (
-        (SELECT raw_user_meta_data->>'role' FROM auth.users WHERE id = auth.uid()) = 'ADMIN'
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );
 
 CREATE POLICY "Call lists ajan kendi listelerini güncelleyebilir"
     ON call_lists FOR UPDATE
     USING (
         agent_id IN (SELECT id FROM agents WHERE user_id = auth.uid())
+    );
+
+-- ============================================
+-- 9. Agent Preferences (Ajan Tercihleri)
+-- ============================================
+CREATE TABLE agent_preferences (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    agent_id UUID NOT NULL UNIQUE REFERENCES agents(id) ON DELETE CASCADE,
+    district_ids UUID[] DEFAULT '{}',
+    categories TEXT[] DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER set_agent_preferences_updated_at
+    BEFORE UPDATE ON agent_preferences
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE agent_preferences ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Agent preferences herkes okuyabilir"
+    ON agent_preferences FOR SELECT
+    USING (true);
+
+CREATE POLICY "Agent preferences admin yazabilir"
+    ON agent_preferences FOR ALL
+    USING (
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
+    );
+
+CREATE POLICY "Agent preferences ajan kendini güncelleyebilir"
+    ON agent_preferences FOR INSERT
+    WITH CHECK (
+        agent_id IN (SELECT id FROM agents WHERE user_id = auth.uid())
+    );
+
+CREATE POLICY "Agent preferences ajan kendini update edebilir"
+    ON agent_preferences FOR UPDATE
+    USING (
+        agent_id IN (SELECT id FROM agents WHERE user_id = auth.uid())
+    );
+
+-- ============================================
+-- 10. Weekly Plans (Legacy Haftalık Plan)
+-- ============================================
+CREATE TYPE weekly_plan_status AS ENUM ('SCRAPING', 'DISTRIBUTING', 'COMPLETED', 'FAILED');
+
+CREATE TABLE weekly_plans (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    week_start DATE NOT NULL UNIQUE,
+    status weekly_plan_status NOT NULL DEFAULT 'SCRAPING',
+    scrape_job_ids UUID[] DEFAULT '{}',
+    total_scrape_jobs INTEGER DEFAULT 0,
+    completed_scrape_jobs INTEGER DEFAULT 0,
+    distribution_stats JSONB,
+    error_message TEXT,
+    created_by UUID REFERENCES agents(id),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER set_weekly_plans_updated_at
+    BEFORE UPDATE ON weekly_plans
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+ALTER TABLE weekly_plans ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Weekly plans herkes okuyabilir"
+    ON weekly_plans FOR SELECT
+    USING (true);
+
+CREATE POLICY "Weekly plans admin yazabilir"
+    ON weekly_plans FOR ALL
+    USING (
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
+    );
+
+ALTER TABLE scrape_jobs
+ADD COLUMN weekly_plan_id UUID REFERENCES weekly_plans(id) ON DELETE SET NULL;
+
+-- ============================================
+-- 11. Lead Activities (Lead Aktivite Geçmişi)
+-- ============================================
+CREATE TYPE activity_type AS ENUM (
+    'STATUS_CHANGE',
+    'ASSIGNMENT_CREATED',
+    'ASSIGNMENT_UPDATED',
+    'CALL_LOGGED',
+    'VISIT_LOGGED',
+    'SCORE_CALCULATED',
+    'NOTE_ADDED',
+    'LEAD_CREATED'
+);
+
+CREATE TABLE lead_activities (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    lead_id UUID NOT NULL REFERENCES leads(id) ON DELETE CASCADE,
+    activity_type activity_type NOT NULL,
+    agent_id UUID REFERENCES agents(id) ON DELETE SET NULL,
+    description TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TRIGGER set_lead_activities_updated_at
+    BEFORE UPDATE ON lead_activities
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+CREATE INDEX idx_lead_activities_lead_id ON lead_activities(lead_id);
+CREATE INDEX idx_lead_activities_created_at ON lead_activities(created_at);
+CREATE INDEX idx_lead_activities_type ON lead_activities(activity_type);
+
+ALTER TABLE lead_activities ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Lead activities okunabilir"
+    ON lead_activities FOR SELECT
+    USING (
+        ((auth.jwt() -> 'user_metadata') ->> 'role') IN ('ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT')
+    );
+
+CREATE POLICY "Lead activities admin yazabilir"
+    ON lead_activities FOR INSERT
+    WITH CHECK (
+        ((auth.jwt() -> 'user_metadata') ->> 'role') = 'ADMIN'
     );

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -59,6 +59,21 @@ function InstagramLink({ username }: { username?: string | null }) {
   )
 }
 
+async function readErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
+  const data = await response.json().catch(() => null)
+
+  if (
+    data &&
+    typeof data === 'object' &&
+    'error' in data &&
+    typeof data.error === 'string'
+  ) {
+    return data.error
+  }
+
+  return fallbackMessage
+}
+
 export default function CallsPage() {
   const [selectedDate, setSelectedDate] = useState(
     getTodayDateInIstanbul()
@@ -72,32 +87,109 @@ export default function CallsPage() {
   const [notesDialogOpen, setNotesDialogOpen] = useState(false)
   const [notesDialogItem, setNotesDialogItem] = useState<CallListItem | null>(null)
   const [prioritizeInstagram, setPrioritizeInstagram] = useState(true)
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const callListsRequestRef = useRef(0)
 
   // Sayfa yüklendiğinde aktif ajanları + en son verili tarihi çek
   useEffect(() => {
-    fetch('/api/agents?is_active=true&role=TELESALES_AGENT')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setAgents(data)
-      })
-      .catch(() => {})
+    let cancelled = false
 
-    // En son arama listesi olan tarihi bul
-    fetch('/api/calls')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setLatestDate(data[0].list_date)
+    async function loadPageMeta() {
+      const [agentsResult, latestDateResult] = await Promise.allSettled([
+        fetch('/api/agents?is_active=true&role=TELESALES_AGENT'),
+        fetch('/api/calls'),
+      ])
+
+      const errors: string[] = []
+
+      if (agentsResult.status === 'fulfilled') {
+        if (agentsResult.value.ok) {
+          const data = await agentsResult.value.json()
+          if (!cancelled && Array.isArray(data)) {
+            setAgents(data)
+          }
+        } else {
+          errors.push(await readErrorMessage(agentsResult.value, 'Aktif ajanlar alınamadı.'))
         }
+      } else {
+        errors.push('Aktif ajanlar alınamadı.')
+      }
+
+      if (latestDateResult.status === 'fulfilled') {
+        if (latestDateResult.value.ok) {
+          const data = await latestDateResult.value.json()
+          if (!cancelled && Array.isArray(data) && data.length > 0) {
+            setLatestDate(data[0].list_date)
+          }
+        } else {
+          errors.push(await readErrorMessage(latestDateResult.value, 'Son liste tarihi alınamadı.'))
+        }
+      } else {
+        errors.push('Son liste tarihi alınamadı.')
+      }
+
+      if (!cancelled) {
+        setErrorMsg(errors.length > 0 ? errors.join(' ') : null)
+      }
+    }
+
+    void loadPageMeta()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const loadCallLists = useCallback(async (date: string, agentId: string) => {
+    const requestId = ++callListsRequestRef.current
+    setIsLoading(true)
+    setErrorMsg(null)
+    try {
+      const params = new URLSearchParams({ list_date: date })
+      if (agentId !== 'all') {
+        params.set('agent_id', agentId)
+      }
+      const response = await fetch(`/api/calls?${params}`)
+      if (!response.ok) {
+        const message = await readErrorMessage(
+          response,
+          'Arama listeleri alınamadı. Son başarılı veriler gösteriliyor.'
+        )
+        if (requestId === callListsRequestRef.current) {
+          setErrorMsg(message)
+        }
+        return
+      }
+
+      const data = (await response.json()) as CallList[]
+
+      if (requestId !== callListsRequestRef.current) {
+        return
+      }
+
+      setCallLists(data)
+      setSelectedList((current) => {
+        if (!current) {
+          return data[0] ?? null
+        }
+
+        return data.find((callList) => callList.id === current.id) ?? data[0] ?? null
       })
-      .catch(() => {})
+    } catch {
+      if (requestId === callListsRequestRef.current) {
+        setErrorMsg('Sunucuya bağlanılamadı. Son başarılı veriler gösteriliyor.')
+      }
+    } finally {
+      if (requestId === callListsRequestRef.current) {
+        setIsLoading(false)
+      }
+    }
   }, [])
 
   // Tarih veya ajan değiştiğinde otomatik yükle
   useEffect(() => {
-    loadCallLists()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate, selectedAgent])
+    void loadCallLists(selectedDate, selectedAgent)
+  }, [loadCallLists, selectedAgent, selectedDate])
 
   function changeDate(days: number) {
     const d = new Date(selectedDate + 'T00:00:00')
@@ -105,61 +197,57 @@ export default function CallsPage() {
     setSelectedDate(d.toISOString().split('T')[0])
   }
 
-  async function loadCallLists() {
-    setIsLoading(true)
-    try {
-      const params = new URLSearchParams({ list_date: selectedDate })
-      if (selectedAgent !== 'all') {
-        params.set('agent_id', selectedAgent)
-      }
-      const response = await fetch(`/api/calls?${params}`)
-      if (response.ok) {
-        const data = await response.json()
-        setCallLists(data)
-        if (data.length > 0) {
-          setSelectedList(data[0])
-        } else {
-          setSelectedList(null)
-        }
-      }
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
   async function updateCallOutcome(leadId: string, status: string, outcome?: string) {
     if (!selectedList) return
 
-    const response = await fetch(`/api/calls/${selectedList.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lead_id: leadId, status, outcome }),
-    })
+    setErrorMsg(null)
 
-    if (response.ok) {
+    try {
+      const response = await fetch(`/api/calls/${selectedList.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId, status, outcome }),
+      })
+
+      if (!response.ok) {
+        setErrorMsg(await readErrorMessage(response, 'Arama sonucu güncellenemedi.'))
+        return
+      }
+
       const updated = await response.json()
       setSelectedList(updated)
       setCallLists((prev) =>
         prev.map((cl) => (cl.id === updated.id ? updated : cl))
       )
+    } catch {
+      setErrorMsg('Sunucuya bağlanılamadı.')
     }
   }
 
   async function saveCallNotes(leadId: string, notes: string) {
     if (!selectedList) return
 
-    const response = await fetch(`/api/calls/${selectedList.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lead_id: leadId, notes }),
-    })
+    setErrorMsg(null)
 
-    if (response.ok) {
+    try {
+      const response = await fetch(`/api/calls/${selectedList.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lead_id: leadId, notes }),
+      })
+
+      if (!response.ok) {
+        setErrorMsg(await readErrorMessage(response, 'Not kaydedilemedi.'))
+        return
+      }
+
       const updated = await response.json()
       setSelectedList(updated)
       setCallLists((prev) =>
         prev.map((cl) => (cl.id === updated.id ? updated : cl))
       )
+    } catch {
+      setErrorMsg('Sunucuya bağlanılamadı.')
     }
   }
 
@@ -193,6 +281,13 @@ export default function CallsPage() {
           Yönetim ekranından manuel oluşturulan telefon listeleri
         </p>
       </div>
+
+      {errorMsg && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          {errorMsg}
+          <button className="ml-2 underline" onClick={() => setErrorMsg(null)}>Kapat</button>
+        </div>
+      )}
 
       {/* Tarih + Ajan Seçici */}
       <Card>
@@ -237,7 +332,7 @@ export default function CallsPage() {
               </Select>
             </div>
 
-            <Button onClick={loadCallLists} disabled={isLoading}>
+            <Button onClick={() => void loadCallLists(selectedDate, selectedAgent)} disabled={isLoading}>
               {isLoading ? 'Yükleniyor...' : 'Yenile'}
             </Button>
 

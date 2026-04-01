@@ -1,9 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GooglePlacesAdapter } from '@/infra/scrapers/google-places.adapter'
+import { logger } from '@/lib/logger'
 
 // fetch'i mock'la
 const mockFetch = vi.fn()
 vi.stubGlobal('fetch', mockFetch)
+vi.spyOn(logger, 'info').mockImplementation(() => {})
+const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {})
 
 describe('GooglePlacesAdapter', () => {
   let adapter: GooglePlacesAdapter
@@ -61,6 +64,13 @@ describe('GooglePlacesAdapter', () => {
         ],
       }),
     })
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        nationalPhoneNumber: '0212 555 1234',
+        websiteUri: 'https://testrestaurant.com',
+      }),
+    })
 
     const result = await adapter.search({ districtId: 'kadikoy', category: 'kafe' })
 
@@ -84,6 +94,9 @@ describe('GooglePlacesAdapter', () => {
     // İkinci lead - claimed değil, kategori Restoran
     expect(result.leads[1].googleIsClaimed).toBe(false)
     expect(result.leads[1].category).toBe('Restoran')
+    expect(result.leads[1].phone).toBe('0212 555 1234')
+    expect(result.leads[1].website).toBe('https://testrestaurant.com')
+    expect(mockFetch).toHaveBeenCalledTimes(2)
   })
 
   it('boş sonuç durumunda boş liste döner', async () => {
@@ -114,9 +127,9 @@ describe('GooglePlacesAdapter', () => {
       ok: true,
       json: async () => ({
         places: [
-          { id: 'p1', displayName: { text: 'Lead 1' }, location: { latitude: 41, longitude: 29 } },
-          { id: 'p2', displayName: { text: 'Lead 2' }, location: { latitude: 41, longitude: 29 } },
-          { id: 'p3', displayName: { text: 'Lead 3' }, location: { latitude: 41, longitude: 29 } },
+          { id: 'p1', displayName: { text: 'Lead 1' }, location: { latitude: 41, longitude: 29 }, nationalPhoneNumber: '0212 000 0001' },
+          { id: 'p2', displayName: { text: 'Lead 2' }, location: { latitude: 41, longitude: 29 }, nationalPhoneNumber: '0212 000 0002' },
+          { id: 'p3', displayName: { text: 'Lead 3' }, location: { latitude: 41, longitude: 29 }, nationalPhoneNumber: '0212 000 0003' },
         ],
         nextPageToken: 'token123',
       }),
@@ -125,6 +138,38 @@ describe('GooglePlacesAdapter', () => {
     const result = await adapter.search({ districtId: 'test', limit: 2 })
     expect(result.totalFound).toBe(2)
     expect(result.leads).toHaveLength(2)
+  })
+
+  it('details isteği başarısız olsa da arama sonucunu döndürür', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        places: [
+          {
+            id: 'detail-fail',
+            displayName: { text: 'Sessiz Kafe', languageCode: 'tr' },
+            formattedAddress: 'Kadıköy, Istanbul',
+            location: { latitude: 40.99, longitude: 29.02 },
+            types: ['cafe'],
+          },
+        ],
+      }),
+    })
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+    })
+
+    const result = await adapter.search({ districtId: 'kadikoy', category: 'kafe' })
+
+    expect(result.totalFound).toBe(1)
+    expect(result.leads).toHaveLength(1)
+    expect(result.leads[0].businessName).toBe('Sessiz Kafe')
+    expect(result.leads[0].phone).toBeUndefined()
+    expect(warnSpy).toHaveBeenCalledWith(
+      'Place details alınamadı',
+      expect.objectContaining({ placeId: 'detail-fail' })
+    )
   })
 
   it('getPlaceDetails telefon ve website bilgisini döner', async () => {

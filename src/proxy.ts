@@ -1,39 +1,17 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
+import {
+  getAllowedRolesForPath,
+  getDefaultPathForRole,
+  PUBLIC_PATH_PREFIXES,
+} from '@/core/auth/access-control'
 import type { AgentRole } from '@/types/database'
 
-const PUBLIC_PATHS = ['/login', '/api/auth', '/auth', '/api/cron']
-
-const PAGE_PERMISSIONS: Record<string, AgentRole[]> = {
-  // Dashboard sayfaları
-  '/admin': ['ADMIN'],
-  '/agents': ['ADMIN'],
-  '/settings': ['ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT'],
-  '/leads': ['ADMIN'],
-  '/routes': ['ADMIN', 'FIELD_AGENT'],
-  '/calls': ['ADMIN', 'TELESALES_AGENT'],
-  '/my/route': ['FIELD_AGENT'],
-  '/my/calls': ['FIELD_AGENT', 'TELESALES_AGENT'],
-  '/my/leads': ['FIELD_AGENT', 'TELESALES_AGENT'],
-  // API endpoint'leri - rol bazlı erişim
-  '/api/agents': ['ADMIN'],
-  '/api/leads': ['ADMIN'],
-  '/api/assignments': ['ADMIN'],
-  '/api/routes': ['ADMIN', 'FIELD_AGENT'],
-  '/api/calls': ['ADMIN', 'TELESALES_AGENT'],
-  '/api/scraper': ['ADMIN'],
-  '/api/weekly-plan': ['ADMIN'],
-  '/api/daily-plan': ['ADMIN'],
-  '/api/districts': ['ADMIN'],
-  '/api/analytics': ['ADMIN', 'FIELD_AGENT', 'TELESALES_AGENT'],
-  '/api/my': ['FIELD_AGENT', 'TELESALES_AGENT'],
-}
-
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
   // Public paths - erişim serbest
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  if (PUBLIC_PATH_PREFIXES.some((pathPrefix) => pathname.startsWith(pathPrefix))) {
     return NextResponse.next()
   }
 
@@ -107,20 +85,19 @@ export async function middleware(request: NextRequest) {
 
   // Rol bazlı erişim kontrolü
   const userRole = (user.user_metadata?.role as AgentRole) ?? 'TELESALES_AGENT'
+  const allowedRoles = getAllowedRolesForPath(pathname)
 
-  for (const [path, allowedRoles] of Object.entries(PAGE_PERMISSIONS)) {
-    if (pathname.startsWith(path) && !allowedRoles.includes(userRole)) {
-      if (pathname.startsWith('/api/')) {
-        return NextResponse.json({ error: 'Erişim reddedildi' }, { status: 403 })
-      }
-      const defaultPath = userRole === 'ADMIN' ? '/analytics' : '/my/calls'
-      return NextResponse.redirect(new URL(defaultPath, request.url))
+  if (allowedRoles && !allowedRoles.includes(userRole)) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json({ error: 'Erişim reddedildi' }, { status: 403 })
     }
+
+    return NextResponse.redirect(new URL(getDefaultPathForRole(userRole), request.url))
   }
 
   return response
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.[^/]+$).*)'],
 }

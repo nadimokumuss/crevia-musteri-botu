@@ -144,8 +144,7 @@ export async function POST(request: NextRequest) {
     const authUserId = authData.user.id
 
     // 2. Agents tablosuna user_id ile birlikte insert (password hariç)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { password: _, ...agentData } = parsed
+    const agentData = createAgentSchema.omit({ password: true }).parse(parsed)
     const { data, error } = await supabase
       .from('agents')
       .insert({ ...agentData, user_id: authUserId })

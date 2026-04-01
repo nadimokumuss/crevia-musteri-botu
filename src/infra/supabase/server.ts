@@ -19,7 +19,7 @@ export async function createServerSupabaseClient() {
               cookieStore.set(name, value, options)
             )
           } catch {
-            // Server Component'ta set edilemez, middleware'de handle edilir
+            // Server Component'ta set edilemez, proxy akışında handle edilir
           }
         },
       },
