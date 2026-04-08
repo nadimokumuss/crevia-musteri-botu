@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { hydrateCallListItemsWithInstagram } from '@/infra/supabase/hydrate-call-list-items'
+import { listAssignedLeadIds } from '@/infra/supabase/list-assigned-lead-ids'
 import { createServiceRoleClient } from '@/infra/supabase/server'
 import { generateCallList, selectCallLeadCandidates } from '@/core/routing/call-list-generator'
 import { logLeadActivity } from '@/infra/supabase/log-activity'
+import { AppError } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { z } from 'zod'
 import type { CallListItem } from '@/types/call'
@@ -80,16 +82,7 @@ export async function POST(request: NextRequest) {
     const districtIds = preferences?.district_ids ?? []
     const categories = preferences?.categories ?? []
 
-    const { data: assignmentRows, error: assignmentError } = await supabase
-      .from('assignments')
-      .select('lead_id')
-
-    if (assignmentError) {
-      logger.error('Mevcut atamalar getirilemedi', { error: assignmentError.message })
-      return NextResponse.json({ error: 'Atama verileri alinamadi' }, { status: 500 })
-    }
-
-    const assignedLeadIds = new Set((assignmentRows ?? []).map((row) => row.lead_id as string))
+    const assignedLeadIds = await listAssignedLeadIds(supabase)
 
     const candidateLeads = await loadCandidateLeads(supabase, {
       districtIds,
@@ -227,6 +220,12 @@ export async function POST(request: NextRequest) {
     )
   } catch (error) {
     logger.error('Calls POST hatasi', { error: String(error) })
+    if (error instanceof AppError) {
+      return NextResponse.json(
+        { error: error.message, code: error.code },
+        { status: error.statusCode }
+      )
+    }
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Gecersiz istek' },
       { status: 400 }
