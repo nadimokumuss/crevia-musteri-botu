@@ -56,7 +56,7 @@ Cok adimli yazimlar tek transaction'da Postgres RPC'leri ile yapilir; ROLLBACK g
 - `GET /api/analytics`
 - `POST /api/auth` — yalniz ADMIN; auth + admin guard ile korunur
 - `GET /api/cron/enrich-instagram` — Vercel cron (gunluk 06:00 UTC)
-- `GET /api/cron/clean-expired-locks` — Vercel cron (her 30dk)
+- `GET /api/cron/clean-expired-locks` — Vercel cron (gunluk 03:00 UTC; Hobby plan cron quota uyumu)
 - `GET /api/weekly-plan`, `DELETE /api/weekly-plan` (atomik)
 - `GET /api/weekly-plan/status` (read-only — yan etki yok)
 - `DELETE /api/daily-plan` (atomik)
