@@ -3,14 +3,27 @@
  */
 
 import type { GeoPoint, BoundingBox } from '@/types/geo'
+import { ValidationError } from '@/lib/errors'
 
 /** Dünya yarıçapı (km) */
 const EARTH_RADIUS_KM = 6371
+
+function assertValidPoint(p: GeoPoint, label: string): void {
+  if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) {
+    throw new ValidationError(`${label}: koordinat NaN/Infinity`, { lat: p.lat, lng: p.lng })
+  }
+  if (p.lat < -90 || p.lat > 90 || p.lng < -180 || p.lng > 180) {
+    throw new ValidationError(`${label}: koordinat sınır dışında`, { lat: p.lat, lng: p.lng })
+  }
+}
 
 /**
  * Haversine formülü ile iki nokta arasındaki mesafeyi hesapla (km)
  */
 export function haversineDistance(a: GeoPoint, b: GeoPoint): number {
+  assertValidPoint(a, 'haversineDistance.a')
+  assertValidPoint(b, 'haversineDistance.b')
+
   const toRad = (deg: number) => (deg * Math.PI) / 180
 
   const dLat = toRad(b.lat - a.lat)

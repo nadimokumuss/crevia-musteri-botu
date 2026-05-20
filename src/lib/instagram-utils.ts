@@ -11,6 +11,7 @@ import type { Lead } from '@/types/database'
 
 /** Türkçe özel karakterleri ASCII karşılıklarına dönüştür */
 export function normalizeTurkish(str: string): string {
+  if (!str) return ''
   return str
     .toLowerCase()
     .replace(/[çÇ]/g, 'c')
@@ -86,16 +87,17 @@ export function getInstagramProfileUrl(value: string | null | undefined): string
 
 /**
  * HTML içeriğinden Instagram linklerini bul.
- * Ortak yanlışları filtreler: /p/, /reel/, /explore/ vb.
+ * Username kuralı: 1-30 karakter, başta/sonda harf-rakam, ortada nokta/alt çizgi olabilir.
  */
 export function extractInstagramFromHtml(html: string): string | null {
-  const pattern = /instagram\.com\/([a-zA-Z0-9_.]+)/g
+  // Strict: başta-sonda alphanumeric, ortada [a-z0-9._], 1-30 karakter
+  const pattern = /instagram\.com\/([a-zA-Z0-9](?:[a-zA-Z0-9._]{0,28}[a-zA-Z0-9])?)\b/g
   const systemPaths = new Set(['p', 'reel', 'reels', 'explore', 'stories', 'accounts', 'about', 'legal', 'developer'])
 
   let match: RegExpExecArray | null
   while ((match = pattern.exec(html)) !== null) {
     const username = match[1]
-    if (!systemPaths.has(username) && username.length >= 2 && username.length <= 30) {
+    if (!systemPaths.has(username.toLowerCase()) && username.length >= 2 && username.length <= 30) {
       return username.toLowerCase()
     }
   }

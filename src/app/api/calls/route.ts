@@ -3,19 +3,20 @@ import { hydrateCallListItemsWithInstagram } from '@/infra/supabase/hydrate-call
 import { listAssignedLeadIds } from '@/infra/supabase/list-assigned-lead-ids'
 import { createServiceRoleClient } from '@/infra/supabase/server'
 import { generateCallList, selectCallLeadCandidates } from '@/core/routing/call-list-generator'
-import { logLeadActivity } from '@/infra/supabase/log-activity'
 import { AppError } from '@/lib/errors'
 import { logger } from '@/lib/logger'
 import { z } from 'zod'
 import type { CallListItem } from '@/types/call'
+import { isoDateString } from '@/lib/validators'
+import { SCORE_THRESHOLDS } from '@/lib/constants'
 
 const PAGE_SIZE = 200
 
 const createCallListSchema = z.object({
   agent_id: z.string().uuid(),
-  list_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  list_date: isoDateString,
   max_items: z.number().int().min(1).max(100).optional().default(20),
-  min_score: z.number().int().min(0).max(100).optional().default(20),
+  min_score: z.number().int().min(SCORE_THRESHOLDS.LOW_PRIORITY).max(100).optional().default(20),
 })
 
 interface CallLeadRow {
@@ -39,45 +40,30 @@ export async function POST(request: NextRequest) {
       .from('agents')
       .select('id, full_name, role, is_active')
       .eq('id', parsed.agent_id)
-      .single()
+      .maybeSingle()
 
-    if (agentError || !agent) {
+    if (agentError) {
+      logger.error('Ajan bilgisi alinamadi', { error: agentError.message })
+      return NextResponse.json({ error: 'Ajan bilgisi alinamadi' }, { status: 500 })
+    }
+    if (!agent) {
       return NextResponse.json({ error: 'Ajan bulunamadi' }, { status: 404 })
     }
-
     if (agent.role !== 'TELESALES_AGENT') {
       return NextResponse.json(
         { error: 'Manuel arama listesi yalnizca telefon ajanlari icin olusturulabilir' },
         { status: 400 }
       )
     }
-
     if (!agent.is_active) {
       return NextResponse.json({ error: 'Pasif ajan icin liste olusturulamaz' }, { status: 400 })
-    }
-
-    const { data: existingList } = await supabase
-      .from('call_lists')
-      .select('id')
-      .eq('agent_id', parsed.agent_id)
-      .eq('list_date', parsed.list_date)
-      .single()
-
-    if (existingList) {
-      return NextResponse.json(
-        {
-          error: 'Bu ajan ve tarih icin zaten bir arama listesi var. Sessizce uzerine yazilmadi.',
-          code: 'CALL_LIST_ALREADY_EXISTS',
-        },
-        { status: 409 }
-      )
     }
 
     const { data: preferences } = await supabase
       .from('agent_preferences')
       .select('district_ids, categories')
       .eq('agent_id', parsed.agent_id)
-      .single()
+      .maybeSingle()
 
     const districtIds = preferences?.district_ids ?? []
     const categories = preferences?.categories ?? []
@@ -121,85 +107,61 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const selectedLeadIds = selectedLeads.map((lead) => lead.id)
-    const { data: raceConflicts } = await supabase
-      .from('assignments')
-      .select('lead_id')
-      .in('lead_id', selectedLeadIds)
-
-    const conflictIds = new Set((raceConflicts ?? []).map((row) => row.lead_id as string))
-
-    const finalLeads = selectedLeads.filter((lead) => !conflictIds.has(lead.id))
-
-    if (finalLeads.length === 0) {
-      return NextResponse.json(
-        {
-          error: 'Secilen leadler baska bir islem sirasinda zaten atanmis. Lutfen tekrar deneyin.',
-          code: 'NO_FRESH_LEADS_LEFT',
-        },
-        { status: 409 }
-      )
-    }
-
-    const callItems = generateCallList(finalLeads, {
+    const callItems = generateCallList(selectedLeads, {
       maxItems: parsed.max_items,
       minScore: parsed.min_score,
     })
 
-    const { data: callList, error: insertCallListError } = await supabase
-      .from('call_lists')
-      .insert({
-        agent_id: parsed.agent_id,
-        list_date: parsed.list_date,
-        items: callItems,
-        total_items: callItems.length,
-        completed_items: 0,
-      })
-      .select()
-      .single()
+    const leadIds = callItems.map((item) => item.leadId)
 
-    if (insertCallListError || !callList) {
-      logger.error('Arama listesi kaydedilemedi', { error: insertCallListError?.message })
+    // Atomik RPC: call_lists + assignments + activity log tek transaction'da
+    // UNIQUE(agent_id, list_date) ya da UNIQUE(lead_id) çakışırsa Postgres ROLLBACK eder
+    const { data: rpcData, error: rpcError } = await supabase.rpc('create_call_list_atomic', {
+      p_agent_id: parsed.agent_id,
+      p_list_date: parsed.list_date,
+      p_items: callItems,
+      p_lead_ids: leadIds,
+    })
+
+    if (rpcError) {
+      // Postgres unique violation → race condition (paralel çağrı kazandı)
+      if (rpcError.code === '23505') {
+        if (rpcError.message?.includes('unique_agent_call_date')) {
+          return NextResponse.json(
+            {
+              error: 'Bu ajan ve tarih icin zaten bir arama listesi var.',
+              code: 'CALL_LIST_ALREADY_EXISTS',
+            },
+            { status: 409 }
+          )
+        }
+        return NextResponse.json(
+          {
+            error: 'Secilen leadlerden biri eszamanli olarak atanmis. Lutfen tekrar deneyin.',
+            code: 'LEAD_RACE_CONDITION',
+          },
+          { status: 409 }
+        )
+      }
+
+      // Custom plpgsql exception
+      if (rpcError.code === 'P0001') {
+        return NextResponse.json(
+          { error: rpcError.message, code: rpcError.message },
+          { status: 400 }
+        )
+      }
+
+      logger.error('Atomik arama listesi olusturma basarisiz', {
+        error: rpcError.message,
+        code: rpcError.code,
+      })
       return NextResponse.json({ error: 'Liste kaydedilemedi' }, { status: 500 })
     }
 
-    const assignmentInsertRows = callItems.map((item) => ({
-      lead_id: item.leadId,
-      agent_id: parsed.agent_id,
-      scheduled_date: parsed.list_date,
-      assignment_type: 'CALL' as const,
-      status: 'PENDING' as const,
-    }))
+    const callList = rpcData as Record<string, unknown> & { id: string; items: CallListItem[] }
 
-    const { error: insertAssignmentError } = await supabase
-      .from('assignments')
-      .insert(assignmentInsertRows)
-
-    if (insertAssignmentError) {
-      await supabase.from('call_lists').delete().eq('id', callList.id)
-
-      logger.error('Call assignments kaydedilemedi', { error: insertAssignmentError.message })
-      return NextResponse.json(
-        {
-          error: insertAssignmentError.code === '23505'
-            ? 'Secilen leadlerden biri zaten atanmis. Liste olusturulmadi.'
-            : 'Arama atamalari kaydedilemedi.',
-        },
-        { status: insertAssignmentError.code === '23505' ? 409 : 500 }
-      )
-    }
-
-    for (const item of callItems) {
-      logLeadActivity({
-        leadId: item.leadId,
-        activityType: 'ASSIGNMENT_CREATED',
-        description: `Manuel arama listesine eklendi (${parsed.list_date})`,
-        agentId: parsed.agent_id,
-        metadata: { assignment_type: 'CALL', scheduled_date: parsed.list_date },
-      })
-    }
-
-    const assignedExcluded = candidateLeads.filter((lead) => assignedLeadIds.has(lead.id)).length + conflictIds.size
+    const assignedExcluded = candidateLeads.filter((lead) => assignedLeadIds.has(lead.id)).length
 
     logger.info('Manuel arama listesi olusturuldu', {
       agentId: parsed.agent_id,

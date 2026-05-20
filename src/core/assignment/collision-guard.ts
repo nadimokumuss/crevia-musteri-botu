@@ -18,10 +18,9 @@ export interface LockResult {
 }
 
 /**
- * Bir lead için kilit al
+ * Bir lead için kilit al — tek atomik RPC ile
  *
- * Lead için mevcut bir atama varsa tekrar atama yapılmaz.
- * Aynı kayıt yeniden kilitleniyorsa lock alanları güncellenir.
+ * Race-free: PostgreSQL FOR UPDATE + UNIQUE(lead_id) constraint birleşimi.
  */
 export async function acquireLock(
   leadId: string,
@@ -30,91 +29,52 @@ export async function acquireLock(
   assignmentType: 'VISIT' | 'CALL'
 ): Promise<LockResult> {
   const supabase = createServiceRoleClient()
-  const now = new Date()
-  const expiresAt = new Date(now.getTime() + LOCK_DURATION_MINUTES * 60 * 1000)
 
-  // Önce süresi dolmuş kilitleri temizle
-  const { error: cleanupError } = await supabase
-    .from('assignments')
-    .update({ locked_at: null, lock_expires_at: null, locked_by: null })
-    .lt('lock_expires_at', now.toISOString())
-    .not('lock_expires_at', 'is', null)
+  const { data, error } = await supabase.rpc('acquire_assignment_lock', {
+    p_lead_id: leadId,
+    p_agent_id: agentId,
+    p_scheduled_date: scheduledDate,
+    p_assignment_type: assignmentType,
+    p_lock_minutes: LOCK_DURATION_MINUTES,
+  })
 
-  if (cleanupError) {
-    logger.warn('Suresi dolmus kilit temizleme basarisiz', { error: cleanupError.message })
-  }
-
-  // Mevcut atama/kilit kontrolü
-  const { data: existing } = await supabase
-    .from('assignments')
-    .select('id, agent_id, status, locked_by, lock_expires_at, scheduled_date, assignment_type')
-    .eq('lead_id', leadId)
-    .single()
-
-  if (existing) {
-    const isSameAssignment =
-      existing.agent_id === agentId &&
-      existing.scheduled_date === scheduledDate &&
-      existing.assignment_type === assignmentType
-
-    if (existing.locked_by && existing.locked_by !== agentId) {
-      const lockExpires = existing.lock_expires_at ? new Date(existing.lock_expires_at) : null
-      if (lockExpires && lockExpires > now) {
-        throw new ConflictError(
-          `Bu lead zaten başka bir ajan tarafından kilitlenmiş (süre: ${lockExpires.toISOString()})`
-        )
-      }
-    }
-
-    if (!isSameAssignment) {
-      throw new ConflictError('Bu lead daha once bir ajana atanmis. Tekrar atama kapali.')
-    }
-
-    const { error } = await supabase
-      .from('assignments')
-      .update({
-        agent_id: agentId,
-        locked_at: now.toISOString(),
-        lock_expires_at: expiresAt.toISOString(),
-        locked_by: agentId,
-        status: 'PENDING',
-      })
-      .eq('id', existing.id)
-
-    if (error) {
-      logger.error('Kilit güncellenemedi', { error: error.message })
-      return { acquired: false, lockId: null, expiresAt: null }
-    }
-
-    return { acquired: true, lockId: existing.id, expiresAt }
-  }
-
-  // Yeni atama + kilit oluştur
-  const { data: newAssignment, error: insertError } = await supabase
-    .from('assignments')
-    .insert({
-      lead_id: leadId,
-      agent_id: agentId,
-      assignment_type: assignmentType,
-      scheduled_date: scheduledDate,
-      status: 'PENDING',
-      locked_at: now.toISOString(),
-      lock_expires_at: expiresAt.toISOString(),
-      locked_by: agentId,
+  if (error) {
+    logger.error('Kilit alma RPC hatası', {
+      error: error.message,
+      code: error.code,
+      leadId,
     })
-    .select()
-    .single()
-
-  if (insertError) {
-    if (insertError.code === '23505') {
-      throw new ConflictError('Bu lead daha once atanmis. Tekrar atama kapali.')
-    }
-    logger.error('Kilit oluşturulamadı', { error: insertError.message })
     return { acquired: false, lockId: null, expiresAt: null }
   }
 
-  logger.info('Kilit alındı', { lockId: newAssignment.id, leadId, agentId })
-  return { acquired: true, lockId: newAssignment.id, expiresAt }
+  const result = data as {
+    acquired: boolean
+    lockId?: string
+    expiresAt?: string
+    reason?: string
+  }
+
+  if (!result.acquired) {
+    if (result.reason === 'LOCKED_BY_OTHER') {
+      throw new ConflictError(
+        `Bu lead zaten başka bir ajan tarafından kilitlenmiş (süre: ${result.expiresAt ?? 'bilinmiyor'})`
+      )
+    }
+    if (result.reason === 'ALREADY_ASSIGNED') {
+      throw new ConflictError('Bu lead daha once bir ajana atanmis. Tekrar atama kapali.')
+    }
+    if (result.reason === 'RACE_CONDITION') {
+      throw new ConflictError('Bu lead aynı anda başka bir işlem tarafından atandı. Tekrar deneyin.')
+    }
+    return { acquired: false, lockId: null, expiresAt: null }
+  }
+
+  logger.info('Kilit alındı', { lockId: result.lockId, leadId, agentId })
+  return {
+    acquired: true,
+    lockId: result.lockId ?? null,
+    expiresAt: result.expiresAt ? new Date(result.expiresAt) : null,
+  }
 }
 
 /**
@@ -141,7 +101,7 @@ export async function releaseLock(lockId: string): Promise<boolean> {
 }
 
 /**
- * Süresi dolmuş tüm kilitleri temizle
+ * Süresi dolmuş tüm kilitleri temizle (cron'dan çağrılır)
  */
 export async function cleanExpiredLocks(): Promise<number> {
   const supabase = createServiceRoleClient()

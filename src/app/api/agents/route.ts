@@ -48,9 +48,13 @@ export async function DELETE(request: NextRequest) {
       .from('agents')
       .select('id, user_id, email')
       .eq('id', id)
-      .single()
+      .maybeSingle()
 
-    if (fetchError || !agent) {
+    if (fetchError) {
+      logger.error('Ajan bilgisi alinamadi', { error: fetchError.message })
+      return NextResponse.json({ error: 'Veri alınamadı' }, { status: 500 })
+    }
+    if (!agent) {
       return NextResponse.json({ error: 'Ajan bulunamadı' }, { status: 404 })
     }
 

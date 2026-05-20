@@ -4,6 +4,23 @@
 
 import { z } from 'zod'
 
+/** Geçerli YYYY-MM-DD tarih (regex + gerçek takvim doğrulaması) */
+export const isoDateString = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Tarih biçimi YYYY-MM-DD olmalı')
+  .refine(
+    (s) => {
+      const [y, m, d] = s.split('-').map(Number)
+      const date = new Date(Date.UTC(y, m - 1, d))
+      return (
+        date.getUTCFullYear() === y &&
+        date.getUTCMonth() === m - 1 &&
+        date.getUTCDate() === d
+      )
+    },
+    { message: 'Geçersiz takvim tarihi' }
+  )
+
 /** Koordinat doğrulama */
 export const geoPointSchema = z.object({
   lat: z.number().min(-90).max(90),
@@ -65,7 +82,7 @@ export const createAssignmentSchema = z.object({
   lead_id: z.string().uuid(),
   agent_id: z.string().uuid(),
   assignment_type: z.enum(['VISIT', 'CALL']),
-  scheduled_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  scheduled_date: isoDateString,
 })
 
 /** Atama güncelleme */
@@ -78,7 +95,7 @@ export const updateAssignmentSchema = z.object({
 /** Rota oluşturma */
 export const createRouteSchema = z.object({
   agent_id: z.string().uuid(),
-  route_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  route_date: isoDateString,
   stops: z.array(z.object({
     lead_id: z.string().uuid(),
     order: z.number().int().min(0),
@@ -94,7 +111,7 @@ export const createRouteSchema = z.object({
 /** Rota optimize isteği */
 export const optimizeRouteSchema = z.object({
   agent_id: z.string().uuid(),
-  route_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  route_date: isoDateString,
   lead_ids: z.array(z.string().uuid()).min(1).max(20),
 })
 
@@ -148,11 +165,24 @@ export const enrichInstagramBatchSchema = z.object({
 
 /** Haftalık plan oluşturma */
 export const createWeeklyPlanSchema = z.object({
-  week_start: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  week_start: isoDateString.optional(),
 })
 
 /** Günlük dağıtım */
 export const dailyDistributeSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  date: isoDateString.optional(),
   force: z.boolean().optional().default(false),
 })
+
+/** Audit batch tetik */
+export const auditBatchSchema = z.object({
+  minScore: z.number().int().min(0).max(100).optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+  forceRegenerate: z.boolean().optional(),
+  budgetUsd: z.number().positive().max(500).optional(),
+}).strict()
+
+/** Tek lead audit tetik (POST body opsiyonel) */
+export const auditSingleSchema = z.object({
+  forceRegenerate: z.boolean().optional(),
+}).strict()

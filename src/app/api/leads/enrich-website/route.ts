@@ -7,6 +7,8 @@ import { logger } from '@/lib/logger'
 import { optionalLeadIdsSchema } from '@/lib/validators'
 import type { Lead } from '@/types/database'
 
+const WEBSITE_ENRICHMENT_CONCURRENCY = 3
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}))
@@ -26,7 +28,6 @@ export async function POST(request: NextRequest) {
     if (leadIds && leadIds.length > 0) {
       query = query.in('id', leadIds)
     } else {
-      // Website'i olan ama analiz edilmemiş lead'ler
       query = query
         .not('website', 'is', null)
         .is('website_speed_score', null)
@@ -44,69 +45,70 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Zenginleştirilecek lead bulunamadı', enriched: 0 })
     }
 
+    const queue = (leads as Lead[]).filter((lead) => !!lead.website)
     let enriched = 0
 
-    for (const lead of leads as Lead[]) {
-      if (!lead.website) continue
+    const workers = Array.from(
+      { length: Math.min(WEBSITE_ENRICHMENT_CONCURRENCY, queue.length) },
+      async () => {
+        while (queue.length > 0) {
+          const lead = queue.shift()
+          if (!lead || !lead.website) break
 
-      try {
-        const result = await adapter.analyze(lead.website)
+          try {
+            const result = await adapter.analyze(lead.website)
 
-        const updateData: Record<string, unknown> = {
-          website_speed_score: result.speedScore,
-          website_is_mobile_friendly: result.isMobileFriendly,
-          website_has_404s: result.has404s,
-          website_has_meta_pixel: result.hasMetaPixel,
-          website_has_ga4: result.hasGA4,
-        }
+            const update: Record<string, unknown> = {
+              website_speed_score: result.speedScore,
+              website_is_mobile_friendly: result.isMobileFriendly,
+              website_has_404s: result.has404s,
+              website_has_meta_pixel: result.hasMetaPixel,
+              website_has_ga4: result.hasGA4,
+            }
 
-        // Email bulunduysa ve lead'de email yoksa güncelle
-        if (result.emails.length > 0 && !lead.email) {
-          updateData.email = result.emails[0]
-          updateData.email_source = 'website'
-        }
+            if (result.emails.length > 0 && !lead.email) {
+              update.email = result.emails[0]
+              update.email_source = 'website'
+            }
 
-        const { error: updateError } = await supabase
-          .from('leads')
-          .update(updateData)
-          .eq('id', lead.id)
+            // Tek UPDATE: enrichment + rescore birleşik
+            const rescoredLead = {
+              ...lead,
+              ...update,
+              email: (update.email as string | undefined) ?? lead.email,
+              email_source: (update.email_source as Lead['email_source'] | undefined) ?? lead.email_source,
+            } as Lead
 
-        if (updateError) {
-          logger.warn('Website zenginleştirme güncelleme hatası', { leadId: lead.id, error: updateError.message })
-        } else {
-          const rescoredLead = {
-            ...lead,
-            ...updateData,
-            email: (updateData.email as string | undefined) ?? lead.email,
-            email_source: (updateData.email_source as Lead['email_source'] | undefined) ?? lead.email_source,
-          } as Lead
+            const score = calculateNeedScore(buildAllSignals(rescoredLead))
 
-          const score = calculateNeedScore(buildAllSignals(rescoredLead))
-          const { error: scoreError } = await supabase
-            .from('leads')
-            .update({
-              need_score: score.totalScore,
-              google_sub_score: score.googleSubScore,
-              instagram_sub_score: score.instagramSubScore,
-              website_sub_score: score.websiteSubScore,
-              marketing_sub_score: score.marketingSubScore,
-              recommendation: score.recommendation,
-            })
-            .eq('id', lead.id)
+            update.need_score = score.totalScore
+            update.google_sub_score = score.googleSubScore
+            update.instagram_sub_score = score.instagramSubScore
+            update.website_sub_score = score.websiteSubScore
+            update.marketing_sub_score = score.marketingSubScore
+            update.recommendation = score.recommendation
 
-          if (scoreError) {
-            logger.warn('Website sonrasi puan guncellenemedi', {
-              leadId: lead.id,
-              error: scoreError.message,
-            })
+            const { error: updateError } = await supabase
+              .from('leads')
+              .update(update)
+              .eq('id', lead.id)
+
+            if (updateError) {
+              logger.warn('Website zenginleştirme güncelleme hatası', {
+                leadId: lead.id,
+                error: updateError.message,
+              })
+            } else {
+              enriched++
+            }
+          } catch (err) {
+            logger.warn('Website zenginleştirme hatası', { leadId: lead.id, error: String(err) })
           }
-
-          enriched++
         }
-      } catch (err) {
-        logger.warn('Website zenginleştirme hatası', { leadId: lead.id, error: String(err) })
       }
-    }
+    )
+
+    await Promise.all(workers)
 
     logger.info('Website zenginleştirme tamamlandı', { enriched, total: leads.length })
 

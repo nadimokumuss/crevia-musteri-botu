@@ -85,6 +85,20 @@ export interface Lead {
   recommendation: LeadRecommendation
   status: LeadStatus
   notes: string | null
+  // Faz 1: Audit motoru (Sonnet LLM synthesis)
+  audit_narrative: string | null
+  audit_strengths: Array<Record<string, unknown>> | null
+  audit_gaps: Array<Record<string, unknown>> | null
+  audit_tier: 'A' | 'B' | 'C' | null
+  phone_script: string | null
+  outreach_email_subject: string | null
+  outreach_email_body: string | null
+  audit_share_slug: string | null
+  audit_generated_at: string | null
+  audit_model: string | null
+  // GBP review enrichment cache (Outscraper, 30 gun TTL)
+  gbp_reviews_fetched_at: string | null
+  gbp_reviews_summary: Record<string, unknown> | null
   created_at: string
   updated_at: string
 }

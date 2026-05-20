@@ -33,7 +33,7 @@ export async function getCurrentUser(): Promise<AuthUser | null> {
     .from('agents')
     .select('id')
     .eq('user_id', user.id)
-    .single()
+    .maybeSingle()
 
   return {
     id: user.id,

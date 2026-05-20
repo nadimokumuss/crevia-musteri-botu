@@ -16,9 +16,9 @@ export async function GET() {
       .select('*')
       .order('created_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
 
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
       logger.error('Weekly plan getirilemedi', { error: error.message })
       return NextResponse.json({ error: 'Veriler alınamadı' }, { status: 500 })
     }
@@ -41,58 +41,26 @@ export async function DELETE(request: Request) {
 
     const supabase = createServiceRoleClient()
 
-    const { data: plan } = await supabase
-      .from('weekly_plans')
-      .select('id, status, week_start')
-      .eq('id', planId)
-      .single()
+    const { data, error } = await supabase.rpc('reset_weekly_plan_atomic', {
+      p_plan_id: planId,
+    })
 
-    if (!plan) {
-      return NextResponse.json({ error: 'Plan bulunamadı' }, { status: 404 })
+    if (error) {
+      if (error.code === 'P0002') {
+        return NextResponse.json({ error: 'Plan bulunamadı' }, { status: 404 })
+      }
+      if (error.code === 'P0001' && error.message?.includes('PLAN_DISTRIBUTING')) {
+        return NextResponse.json(
+          { error: 'Dağıtım devam ederken plan silinemez' },
+          { status: 400 }
+        )
+      }
+      logger.error('Weekly plan reset RPC hatası', { error: error.message, code: error.code })
+      return NextResponse.json({ error: 'Sunucu hatası' }, { status: 500 })
     }
 
-    if (plan.status === 'DISTRIBUTING') {
-      return NextResponse.json({ error: 'Dağıtım devam ederken plan silinemez' }, { status: 400 })
-    }
-
-    const weekStartDate = new Date(`${plan.week_start}T00:00:00`)
-    const weekEndDate = new Date(weekStartDate)
-    weekEndDate.setDate(weekEndDate.getDate() + 11)
-    const startStr = weekStartDate.toISOString().split('T')[0]
-    const endStr = weekEndDate.toISOString().split('T')[0]
-
-    const { error: assignmentsError } = await supabase
-      .from('assignments')
-      .delete()
-      .gte('scheduled_date', startStr)
-      .lte('scheduled_date', endStr)
-    const { error: routesError } = await supabase
-      .from('routes')
-      .delete()
-      .gte('route_date', startStr)
-      .lte('route_date', endStr)
-    const { error: callListsError } = await supabase
-      .from('call_lists')
-      .delete()
-      .gte('list_date', startStr)
-      .lte('list_date', endStr)
-    const { error: scrapeJobsError } = await supabase
-      .from('scrape_jobs')
-      .delete()
-      .eq('weekly_plan_id', planId)
-    await supabase.from('weekly_plans').delete().eq('id', planId)
-
-    if (assignmentsError || routesError || callListsError || scrapeJobsError) {
-      logger.warn('Plan sifirlama sirasinda bazi silme hatalari', {
-        assignments: assignmentsError?.message,
-        routes: routesError?.message,
-        callLists: callListsError?.message,
-        scrapeJobs: scrapeJobsError?.message,
-      })
-    }
-
-    logger.info('Plan ve dagitim verileri silindi', { planId, weekStart: startStr })
-    return NextResponse.json({ success: true })
+    logger.info('Plan ve dagitim verileri silindi', { planId, stats: data })
+    return NextResponse.json({ success: true, stats: data })
   } catch (error) {
     logger.error('Weekly plan DELETE hatası', { error: String(error) })
     return NextResponse.json({ error: 'Sunucu hatası' }, { status: 500 })

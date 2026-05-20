@@ -61,6 +61,15 @@ interface InstagramEnrichmentState {
 const INSTAGRAM_BATCH_SIZE = 5
 const INSTAGRAM_MAX_BATCHES = 40
 
+interface AuditBatchResult {
+  eligible: number
+  enriched: number
+  synthesized: number
+  skipped: number
+  errors: Array<{ leadId: string; stage: string; message: string }>
+  estimatedCostUsd: { gbp: number; llm: number; total: number }
+}
+
 const DAY_TYPE_LABELS: Record<string, string> = {
   REMOTE: 'Arama Günü',
   OFF: 'Tatil',
@@ -111,6 +120,11 @@ export default function AdminPage() {
   const [isEnrichingInstagram, setIsEnrichingInstagram] = useState(false)
   const [instagramError, setInstagramError] = useState<string | null>(null)
   const [instagramResult, setInstagramResult] = useState<InstagramEnrichmentState | null>(null)
+  const [auditMinScore, setAuditMinScore] = useState('40')
+  const [auditLimit, setAuditLimit] = useState('10')
+  const [isAuditing, setIsAuditing] = useState(false)
+  const [auditError, setAuditError] = useState<string | null>(null)
+  const [auditResult, setAuditResult] = useState<AuditBatchResult | null>(null)
 
   const todayDate = getTodayDateInIstanbul()
   const dayType = getDayType(parseIstanbulDate(todayDate))
@@ -285,6 +299,44 @@ export default function AdminPage() {
       setScoreResult(data)
     } finally {
       setIsScoringAll(false)
+    }
+  }
+
+  async function handleAuditBatch() {
+    setIsAuditing(true)
+    setAuditError(null)
+    setAuditResult(null)
+
+    const minScoreNum = Number(auditMinScore)
+    const limitNum = Number(auditLimit)
+
+    if (!Number.isFinite(minScoreNum) || minScoreNum < 0 || minScoreNum > 100) {
+      setAuditError('minScore 0-100 arasında olmalı')
+      setIsAuditing(false)
+      return
+    }
+    if (!Number.isFinite(limitNum) || limitNum < 1 || limitNum > 100) {
+      setAuditError('Limit 1-100 arasında olmalı')
+      setIsAuditing(false)
+      return
+    }
+
+    try {
+      const response = await fetch('/api/audit/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ minScore: minScoreNum, limit: limitNum }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        setAuditError(data.error ?? 'Audit batch başarısız')
+        return
+      }
+      setAuditResult(data as AuditBatchResult)
+    } catch {
+      setAuditError('Sunucuya bağlanılamadı')
+    } finally {
+      setIsAuditing(false)
     }
   }
 
@@ -747,6 +799,97 @@ export default function AdminPage() {
                       ))}
                     </div>
                   </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Audit Batch (Sonnet 4.6)</CardTitle>
+            <CardDescription>
+              Yüksek/orta öncelikli leadleri toplu audit&apos;e gönder. Outscraper review enrichment + LLM synthesis + paylaşılabilir slug üretir.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Min skor</label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={auditMinScore}
+                  onChange={(e) => setAuditMinScore(e.target.value)}
+                  disabled={isAuditing}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-muted-foreground">Limit</label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={auditLimit}
+                  onChange={(e) => setAuditLimit(e.target.value)}
+                  disabled={isAuditing}
+                />
+              </div>
+            </div>
+
+            <Button
+              onClick={handleAuditBatch}
+              disabled={isAuditing}
+              className="w-full"
+              variant="secondary"
+            >
+              {isAuditing ? 'Audit batch çalışıyor...' : 'Audit batch başlat'}
+            </Button>
+
+            {auditError && (
+              <div className="rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+                {auditError}
+              </div>
+            )}
+
+            {auditResult && (
+              <div className="rounded-md bg-indigo-50 p-3 text-sm text-indigo-900">
+                <p className="font-medium">Audit batch tamamlandı</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant="secondary" className="bg-indigo-100 text-indigo-800">
+                    {auditResult.eligible} uygun lead
+                  </Badge>
+                  <Badge variant="outline">{auditResult.synthesized} audit üretildi</Badge>
+                  {auditResult.enriched > 0 && (
+                    <Badge variant="outline">{auditResult.enriched} GBP review enrich</Badge>
+                  )}
+                  {auditResult.skipped > 0 && (
+                    <Badge variant="outline">{auditResult.skipped} atlandı</Badge>
+                  )}
+                  {auditResult.errors.length > 0 && (
+                    <Badge variant="outline">{auditResult.errors.length} hata</Badge>
+                  )}
+                </div>
+                <p className="mt-2 text-xs">
+                  Tahmini maliyet:{' '}
+                  <span className="font-semibold">
+                    ${auditResult.estimatedCostUsd.total.toFixed(3)}
+                  </span>{' '}
+                  (GBP ${auditResult.estimatedCostUsd.gbp.toFixed(3)}, LLM $
+                  {auditResult.estimatedCostUsd.llm.toFixed(3)})
+                </p>
+                {auditResult.errors.length > 0 && (
+                  <details className="mt-2 text-xs">
+                    <summary className="cursor-pointer font-medium">Hata detayları</summary>
+                    <ul className="mt-1 space-y-1 max-h-40 overflow-y-auto">
+                      {auditResult.errors.slice(0, 10).map((e, idx) => (
+                        <li key={idx} className="text-red-700">
+                          [{e.stage}] {e.leadId}: {e.message}
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
                 )}
               </div>
             )}

@@ -6,6 +6,10 @@
     {
       "path": "/api/cron/enrich-instagram",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/clean-expired-locks",
+      "schedule": "*/30 * * * *"
     }
   ]
 }

@@ -39,16 +39,30 @@ export const CLUSTERING_DEFAULTS = {
   MIN_POINTS: 3,
 } as const
 
-/** Rota optimizasyonu */
+function envInt(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+function envFloat(name: string, fallback: number): number {
+  const raw = process.env[name]
+  if (!raw) return fallback
+  const parsed = Number(raw)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+/** Rota optimizasyonu (env'den override edilebilir) */
 export const ROUTE_DEFAULTS = {
-  MAX_DAILY_STOPS: 15,
-  MIN_DAILY_STOPS: 3,
-  URBAN_ROAD_FACTOR: 1.3,
-  AVERAGE_VISIT_DURATION_MIN: 30,
+  MAX_DAILY_STOPS: envInt('ROUTE_MAX_DAILY_STOPS', 15),
+  MIN_DAILY_STOPS: envInt('ROUTE_MIN_DAILY_STOPS', 3),
+  URBAN_ROAD_FACTOR: envFloat('ROUTE_URBAN_ROAD_FACTOR', 1.3),
+  AVERAGE_VISIT_DURATION_MIN: envInt('ROUTE_AVERAGE_VISIT_DURATION_MIN', 30),
 } as const
 
-/** Kilit süresi (dakika) */
-export const LOCK_DURATION_MINUTES = 30
+/** Kilit süresi (dakika) — env'den override edilebilir */
+export const LOCK_DURATION_MINUTES = envInt('LOCK_DURATION_MINUTES', 30)
 
 /** Legacy saha modulu icin gunluk ziyaret limiti */
 export const MAX_DAILY_VISITS = 10

@@ -66,3 +66,28 @@ export class ExternalServiceError extends AppError {
     this.name = 'ExternalServiceError'
   }
 }
+
+/**
+ * Yakalanmış hatayı kullanıcıya gösterilecek güvenli mesaja çevir
+ * — `AppError` ve `ZodError` doğal okunaklı mesaj verir
+ * — diğerleri stack/PII içerebilir, generic mesaja düşürülür
+ */
+export function toClientErrorMessage(err: unknown): string {
+  if (err instanceof AppError) {
+    return err.message
+  }
+  if (err && typeof err === 'object' && 'issues' in err && Array.isArray((err as { issues: unknown[] }).issues)) {
+    const first = (err as { issues: Array<{ message?: string }> }).issues[0]
+    return first?.message ?? 'Geçersiz veri'
+  }
+  return 'Sunucu hatası'
+}
+
+/**
+ * AppError → HTTP status code
+ */
+export function toClientErrorStatus(err: unknown): number {
+  if (err instanceof AppError) return err.statusCode
+  if (err && typeof err === 'object' && 'issues' in err) return 400
+  return 500
+}

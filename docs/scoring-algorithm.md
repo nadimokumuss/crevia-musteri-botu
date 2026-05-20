@@ -35,6 +35,7 @@ Her lead 0-100 arasi puanlanir. Yuksek puan = dijital varligi zayif = kreatif aj
 | Instagram hesabi yok | instagram === null | +15 |
 | Inaktif | lastPostDate > 30 gun | +8 |
 | Gonderi duzensizligi | postingRegularity === 'gaps' | +5 |
+| Hesap olu (3+ ay sessiz) | postingRegularity === 'dead' | +5 |
 | Dusuk profil kalitesi | highlight yok VEYA bio link yok | +5 |
 | Dusuk etkilesim | engagementRate < %1 | +3 |
 | Ajans tespit (ceza) | bioContainsAgency === true | **-15** |
@@ -79,18 +80,22 @@ Esik degerleri (`src/lib/constants.ts`):
 
 ## Instagram Zenginlestirme
 
-`POST /api/leads/enrich-instagram` endpoint'i ile calisan mekanizma:
+`POST /api/leads/enrich-instagram` endpoint'i ile calisan mekanizma (3 katmanli kesfetme):
 
-1. ig_username'i olmayan leadler secilir ve kuyruk bitene kadar batch halinde islenir
-2. Her lead icin Instagram kullanici adi tahmin edilir:
-   - Oncelik 1: Website URL'sinden domain adi (orn: `kafeistanbul.com` → `kafeistanbul`)
-   - Oncelik 2: Isletme adindan (Turkce karakter donusumu ile, orn: `Guzellik Salonu Ece` → `guzelliksalonuece`)
-3. Apify Instagram profil scraper ile profil verisi cekilir
-4. Basarili eslesmeler leads tablosunda guncellenir
-5. Puan yeniden hesaplanir (Instagram verileri artik mevcut)
-6. Website veya HTML uzerinden direkt bulunan kullanici adlari gerekiyorsa sonraki gunluk cron calisinda profil detay backfill'ine girer
+1. ig_username'i olmayan leadler secilir; concurrency-limited paralel islenir
+2. **Katman 1 (WEBSITE_URL):** Website URL'si dogrudan `instagram.com/x` ise username cikarilir
+3. **Katman 2 (WEBSITE_HTML):** Website HTML'inde Instagram link aranir (regex strict: 1-30 karakter, basta-sonda alphanumeric)
+4. **Katman 3 (CANDIDATE_VERIFIED):** Isletme adindan/website'den aday uretilir + Apify ile dogrulanir; `verifyInstagramMatch` 3 kural uygular:
+   - profil `externalUrl` domain'i lead website domain'ine esit
+   - bio'da isletme adinin normalize hali geciyor
+   - business account VE fullName isletme adini iceriyor
+5. Basarili eslesmeler `leads` tablosunda guncellenir; `ig_discovery_source` (`WEBSITE_URL` / `WEBSITE_HTML` / `CANDIDATE_VERIFIED`) saklanir
+6. Website/HTML uzerinden direkt bulunan kullanici adlarinin profil detaylari sonraki gunluk cron'da backfill edilir
+7. Puan yeniden hesaplanir (Instagram verileri artik mevcut)
 
 Bir lead'in Instagram hesabi bulunursa, instagram_sub_score 15'ten (hesap yok bonusu) dusebilir — bu IG'si iyi olan isletmelerin puanini dusurur (ajans hizmetine ihtiyaclari daha az).
+
+Ipucu: scraper `POST /api/scraper` cagrisinda `skip_instagram=true` varsayilan; IG kuyrugu cron'da ya da admin tetikli batch'te islenir (Vercel 60sn limitini asmamak icin).
 
 ## Website Zenginlestirme
 

@@ -15,9 +15,9 @@ export async function GET(request: NextRequest) {
         .from('agent_preferences')
         .select('*')
         .eq('agent_id', agentId)
-        .single()
+        .maybeSingle()
 
-      if (error && error.code !== 'PGRST116') {
+      if (error) {
         logger.error('Ajan tercihleri getirilemedi', { error: error.message })
         return NextResponse.json({ error: 'Veriler alınamadı' }, { status: 500 })
       }

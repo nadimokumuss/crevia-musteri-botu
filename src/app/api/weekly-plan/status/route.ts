@@ -18,9 +18,13 @@ export async function GET(request: NextRequest) {
       .from('weekly_plans')
       .select('*')
       .eq('id', planId)
-      .single()
+      .maybeSingle()
 
-    if (planError || !plan) {
+    if (planError) {
+      logger.error('Weekly plan getirilemedi', { error: planError.message })
+      return NextResponse.json({ error: 'Veriler alınamadı' }, { status: 500 })
+    }
+    if (!plan) {
       return NextResponse.json({ error: 'Plan bulunamadı' }, { status: 404 })
     }
 
@@ -44,55 +48,23 @@ export async function GET(request: NextRequest) {
       })
     }
 
-    // Status: SCRAPING — scrape job'ların durumunu kontrol et
-    let jobIds = typedPlan.scrape_job_ids ?? []
+    // SCRAPING durumu — live count, persist etmeden hesapla
+    const storedIds = typedPlan.scrape_job_ids ?? []
 
-    // scrape_job_ids boşsa weekly_plan_id ile scrape_jobs tablosundan çek (fallback)
-    if (jobIds.length === 0) {
-      const { data: fallbackJobs } = await supabase
-        .from('scrape_jobs')
-        .select('id')
-        .eq('weekly_plan_id', planId)
-
-      if (fallbackJobs && fallbackJobs.length > 0) {
-        jobIds = fallbackJobs.map((j) => j.id)
-        await supabase
-          .from('weekly_plans')
-          .update({
-            scrape_job_ids: jobIds,
-            total_scrape_jobs: jobIds.length,
-          })
-          .eq('id', planId)
-      } else {
-        return NextResponse.json({
-          status: 'SCRAPING',
-          completedJobs: 0,
-          totalJobs: typedPlan.total_scrape_jobs,
-          failedJobs: 0,
-        })
-      }
-    }
-
-    const { data: jobs } = await supabase
-      .from('scrape_jobs')
-      .select('id, status')
-      .in('id', jobIds)
+    const { data: jobs } = storedIds.length > 0
+      ? await supabase.from('scrape_jobs').select('id, status').in('id', storedIds)
+      : await supabase.from('scrape_jobs').select('id, status').eq('weekly_plan_id', planId)
 
     const scrapeJobs = (jobs ?? []) as Array<Pick<ScrapeJob, 'id' | 'status'>>
     const completedCount = scrapeJobs.filter((j) => j.status === 'COMPLETED').length
     const failedCount = scrapeJobs.filter((j) => j.status === 'FAILED').length
     const finishedCount = completedCount + failedCount
-
-    // completed_scrape_jobs güncelle
-    await supabase
-      .from('weekly_plans')
-      .update({ completed_scrape_jobs: finishedCount })
-      .eq('id', planId)
+    const totalJobs = scrapeJobs.length || typedPlan.total_scrape_jobs
 
     return NextResponse.json({
       status: 'SCRAPING',
       completedJobs: finishedCount,
-      totalJobs: jobIds.length,
+      totalJobs,
       failedJobs: failedCount,
     })
   } catch (error) {

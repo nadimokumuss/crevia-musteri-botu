@@ -19,7 +19,7 @@ export function PreferencesBanner() {
           .from('agents')
           .select('id')
           .eq('user_id', user.id)
-          .single()
+          .maybeSingle()
         if (!agent) return
 
         const res = await fetch(`/api/agents/preferences?agent_id=${agent.id}`)

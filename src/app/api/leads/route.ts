@@ -92,30 +92,33 @@ export async function GET(request: NextRequest) {
       query = query.in('id', assignedLeadIds)
     }
 
-    // call_status filtresi (CALLBACK olan lead'ler)
+    // call_status filtresi — Postgres JSONB containment ile DB-side
     const callStatus = searchParams.get('call_status')
     if (callStatus) {
+      const containmentArray = JSON.stringify([{ status: callStatus }])
       const { data: callLists } = await supabase
         .from('call_lists')
         .select('items')
-      const callbackLeadIds: string[] = []
+        .filter('items', 'cs', containmentArray)
+
+      const callbackLeadIds = new Set<string>()
       for (const cl of callLists ?? []) {
         const items = cl.items as Array<{ leadId?: string; status?: string }> | null
         if (!items) continue
         for (const item of items) {
           if (item.status === callStatus && item.leadId) {
-            callbackLeadIds.push(item.leadId)
+            callbackLeadIds.add(item.leadId)
           }
         }
       }
-      const uniqueCallbackIds = [...new Set(callbackLeadIds)]
-      if (uniqueCallbackIds.length === 0) {
+
+      if (callbackLeadIds.size === 0) {
         return NextResponse.json({
           data: [],
           pagination: { page: pagination.page, limit: pagination.limit, total: 0, totalPages: 0 },
         })
       }
-      query = query.in('id', uniqueCallbackIds)
+      query = query.in('id', [...callbackLeadIds])
     }
 
     // Sıralama
@@ -164,7 +167,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Lead oluşturulamadı' }, { status: 500 })
     }
 
-    logLeadActivity({
+    await logLeadActivity({
       leadId: data.id,
       activityType: 'LEAD_CREATED',
       description: `Yeni lead oluşturuldu: ${data.business_name}`,

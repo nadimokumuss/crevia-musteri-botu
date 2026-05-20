@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
       .from('agents')
       .select('id')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
     if (!agent) {
       return NextResponse.json({ error: 'Ajan kaydı bulunamadı' }, { status: 404 })

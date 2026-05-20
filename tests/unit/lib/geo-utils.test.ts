@@ -2,6 +2,24 @@ import { describe, it, expect } from 'vitest'
 import { haversineDistance, urbanDistance, getBoundingBox, isPointInBBox, getCentroid } from '@/lib/geo-utils'
 import type { GeoPoint } from '@/types/geo'
 
+describe('haversineDistance — input validation', () => {
+  it('NaN koordinata ValidationError fırlatır', () => {
+    expect(() => haversineDistance({ lat: NaN, lng: 0 }, { lat: 41, lng: 29 })).toThrow()
+  })
+
+  it('Infinity koordinata ValidationError fırlatır', () => {
+    expect(() => haversineDistance({ lat: 41, lng: Infinity }, { lat: 41, lng: 29 })).toThrow()
+  })
+
+  it('sınır dışı latitüde ValidationError fırlatır', () => {
+    expect(() => haversineDistance({ lat: 100, lng: 29 }, { lat: 41, lng: 29 })).toThrow()
+  })
+
+  it('sınır dışı longitüde ValidationError fırlatır', () => {
+    expect(() => haversineDistance({ lat: 41, lng: -200 }, { lat: 41, lng: 29 })).toThrow()
+  })
+})
+
 describe('haversineDistance', () => {
   it('aynı nokta için 0 döner', () => {
     const p = { lat: 41.0082, lng: 28.9784 }

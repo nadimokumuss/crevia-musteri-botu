@@ -17,14 +17,14 @@ export async function GET(
       .from('leads')
       .select('*')
       .eq('id', id)
-      .single()
+      .maybeSingle()
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json({ error: 'Lead bulunamadı' }, { status: 404 })
-      }
       logger.error('Lead getirilemedi', { error: error.message, id })
       return NextResponse.json({ error: 'Veriler alınamadı' }, { status: 500 })
+    }
+    if (!data) {
+      return NextResponse.json({ error: 'Lead bulunamadı' }, { status: 404 })
     }
 
     return NextResponse.json(data)
@@ -52,26 +52,25 @@ export async function PATCH(
       .from('leads')
       .select('status, notes')
       .eq('id', id)
-      .single()
+      .maybeSingle()
 
     const { data, error } = await supabase
       .from('leads')
       .update(parsed)
       .eq('id', id)
       .select()
-      .single()
+      .maybeSingle()
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        return NextResponse.json({ error: 'Lead bulunamadı' }, { status: 404 })
-      }
       logger.error('Lead güncellenemedi', { error: error.message, id })
       return NextResponse.json({ error: 'Güncelleme başarısız' }, { status: 500 })
     }
+    if (!data) {
+      return NextResponse.json({ error: 'Lead bulunamadı' }, { status: 404 })
+    }
 
-    // Aktivite logları (fire-and-forget)
     if (parsed.status && existing && parsed.status !== existing.status) {
-      logLeadActivity({
+      await logLeadActivity({
         leadId: id,
         activityType: 'STATUS_CHANGE',
         description: `Durum ${existing.status} → ${parsed.status} olarak değiştirildi`,
@@ -81,7 +80,7 @@ export async function PATCH(
     }
 
     if (parsed.notes !== undefined && existing && parsed.notes !== existing.notes) {
-      logLeadActivity({
+      await logLeadActivity({
         leadId: id,
         activityType: 'NOTE_ADDED',
         description: 'Not güncellendi',

@@ -44,60 +44,36 @@ export async function POST(request: NextRequest) {
 
     for (const lead of leads as Lead[]) {
       const signals = buildAllSignals(lead)
-
       const result = calculateNeedScore(signals)
 
-      // Temel skorlar (her zaman mevcut kolonlar)
-      const baseUpdate = {
+      const update = {
         need_score: result.totalScore,
         google_sub_score: result.googleSubScore,
         instagram_sub_score: result.instagramSubScore,
+        website_sub_score: result.websiteSubScore,
+        marketing_sub_score: result.marketingSubScore,
         recommendation: result.recommendation,
       }
 
-      // Yeni kolonlar (migration sonrasi)
-      const extendedUpdate = {
-        ...baseUpdate,
-        website_sub_score: result.websiteSubScore,
-        marketing_sub_score: result.marketingSubScore,
-      }
-
-      // Once extended dene, basarisiz olursa base ile dene
       const { error: updateError } = await supabase
         .from('leads')
-        .update(extendedUpdate)
+        .update(update)
         .eq('id', lead.id)
 
       if (updateError) {
-        const { error: fallbackError } = await supabase
-          .from('leads')
-          .update(baseUpdate)
-          .eq('id', lead.id)
-
-        if (fallbackError) {
-          logger.warn('Lead puanı güncellenemedi', { leadId: lead.id, error: fallbackError.message })
-        } else {
-          scored++
-          logLeadActivity({
-            leadId: lead.id,
-            activityType: 'SCORE_CALCULATED',
-            description: `Puan hesaplandı: ${result.totalScore}/100 (${result.recommendation})`,
-            oldValue: lead.need_score?.toString() ?? '0',
-            newValue: result.totalScore.toString(),
-            metadata: { recommendation: result.recommendation },
-          })
-        }
-      } else {
-        scored++
-        logLeadActivity({
-          leadId: lead.id,
-          activityType: 'SCORE_CALCULATED',
-          description: `Puan hesaplandı: ${result.totalScore}/100 (${result.recommendation})`,
-          oldValue: lead.need_score?.toString() ?? '0',
-          newValue: result.totalScore.toString(),
-          metadata: { recommendation: result.recommendation },
-        })
+        logger.warn('Lead puanı güncellenemedi', { leadId: lead.id, error: updateError.message })
+        continue
       }
+
+      scored++
+      await logLeadActivity({
+        leadId: lead.id,
+        activityType: 'SCORE_CALCULATED',
+        description: `Puan hesaplandı: ${result.totalScore}/100 (${result.recommendation})`,
+        oldValue: lead.need_score?.toString() ?? '0',
+        newValue: result.totalScore.toString(),
+        metadata: { recommendation: result.recommendation },
+      })
     }
 
     logger.info('Toplu puanlama tamamlandı', { scored, total: leads.length })

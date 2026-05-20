@@ -156,6 +156,13 @@ describe('calculateNeedScore - 4 sutunlu puanlama', () => {
       expect(result.instagramSubScore).toBe(5)
     })
 
+    it('hesap ölü (3+ ay sessiz) → +5', () => {
+      const result = calculateNeedScore(emptyInput({
+        instagram: goodInstagram({ postingRegularity: 'dead' }),
+      }))
+      expect(result.instagramSubScore).toBe(5)
+    })
+
     it('düşük profil (highlight/bio link eksik) → +5', () => {
       const result = calculateNeedScore(emptyInput({
         instagram: goodInstagram({ hasHighlights: false }),

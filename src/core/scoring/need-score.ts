@@ -99,6 +99,13 @@ function scoreInstagram(instagram: InstagramSignals | null): { score: number; si
     signals.push({ name: 'ig_posting_gaps', points, reason: 'Gönderi düzensizliği (boşluklar)' })
   }
 
+  // Tamamen ölü hesap (3+ ay sessiz) — gaps üzerine ek ceza
+  if (instagram.postingRegularity === 'dead') {
+    const points = 5
+    score += points
+    signals.push({ name: 'ig_dead', points, reason: 'Hesap tamamen ölü (3+ ay)' })
+  }
+
   // Profil kalitesi düşük (highlight yok veya bio link yok)
   if (instagram.hasHighlights === false || instagram.hasBioLink === false) {
     const points = 5

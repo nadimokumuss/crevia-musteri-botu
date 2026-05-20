@@ -1,10 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceRoleClient } from '@/infra/supabase/server'
+import { createServerSupabaseClient, createServiceRoleClient } from '@/infra/supabase/server'
 import { logger } from '@/lib/logger'
 import { setUserRoleSchema } from '@/lib/validators'
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = await createServerSupabaseClient()
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user) {
+      return NextResponse.json({ error: 'Yetkisiz erişim' }, { status: 401 })
+    }
+
+    const serviceClient = createServiceRoleClient()
+    const { data: callerAgent } = await serviceClient
+      .from('agents')
+      .select('id, role, is_active')
+      .eq('user_id', user.id)
+      .maybeSingle()
+
+    if (!callerAgent || !callerAgent.is_active || callerAgent.role !== 'ADMIN') {
+      return NextResponse.json({ error: 'Bu işlem için yönetici yetkisi gerekli' }, { status: 403 })
+    }
+
     const body = await request.json().catch(() => null)
     const parsed = setUserRoleSchema.safeParse(body)
 
@@ -12,8 +30,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Geçersiz istek gövdesi' }, { status: 400 })
     }
 
-    const supabase = createServiceRoleClient()
-    const { error } = await supabase.auth.admin.updateUserById(parsed.data.user_id, {
+    if (parsed.data.user_id === user.id) {
+      return NextResponse.json(
+        { error: 'Kendi rolünüzü değiştiremezsiniz' },
+        { status: 400 }
+      )
+    }
+
+    const { error } = await serviceClient.auth.admin.updateUserById(parsed.data.user_id, {
       user_metadata: { role: parsed.data.role },
     })
 
@@ -25,6 +49,7 @@ export async function POST(request: NextRequest) {
     logger.info('Kullanıcı rolü güncellendi', {
       user_id: parsed.data.user_id,
       role: parsed.data.role,
+      changed_by: user.id,
     })
 
     return NextResponse.json({

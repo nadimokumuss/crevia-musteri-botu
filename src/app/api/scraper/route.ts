@@ -13,20 +13,22 @@ import { calculateNeedScore } from '@/core/scoring/need-score'
 import { logger } from '@/lib/logger'
 import { buildAllSignals } from '@/lib/signal-builders'
 import type { ScrapeJobStatus, Lead } from '@/types/database'
+import type { RawLeadData } from '@/types/lead'
 
 // Vercel Hobby plan: max 60 saniye
 export const maxDuration = 60
+
+const IG_ENRICHMENT_CONCURRENCY = 5
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const parsed = startScrapeJobSchema.parse(body)
     const weeklyPlanId = body.weekly_plan_id as string | undefined
-    const skipInstagram = body.skip_instagram === true
+    const skipInstagram = body.skip_instagram !== false  // default: skip (Faz 3.2)
 
     const supabase = createServiceRoleClient()
 
-    // Scrape job kaydı oluştur
     const { data: job, error: insertError } = await supabase
       .from('scrape_jobs')
       .insert({
@@ -37,14 +39,13 @@ export async function POST(request: NextRequest) {
         ...(weeklyPlanId ? { weekly_plan_id: weeklyPlanId } : {}),
       })
       .select()
-      .single()
+      .maybeSingle()
 
-    if (insertError) {
-      logger.error('Scrape job oluşturulamadı', { error: insertError.message })
+    if (insertError || !job) {
+      logger.error('Scrape job oluşturulamadı', { error: insertError?.message })
       return NextResponse.json({ error: 'Scrape job oluşturulamadı' }, { status: 500 })
     }
 
-    // Senkron çalıştır — fonksiyon iş bitene kadar hayatta kalır
     const result = await runScrapeJob(
       job.id,
       parsed.district_id,
@@ -96,16 +97,19 @@ export async function GET(request: NextRequest) {
         .from('scrape_jobs')
         .select('*')
         .eq('id', jobId)
-        .single()
+        .maybeSingle()
 
-      if (error || !data) {
+      if (error) {
+        logger.error('Job sorgusu hatasi', { error: error.message })
+        return NextResponse.json({ error: 'Veri alınamadı' }, { status: 500 })
+      }
+      if (!data) {
         return NextResponse.json({ error: 'Job bulunamadı' }, { status: 404 })
       }
 
       return NextResponse.json(data)
     }
 
-    // Son 20 job'u listele
     const { data, error } = await supabase
       .from('scrape_jobs')
       .select('*')
@@ -128,154 +132,40 @@ async function runScrapeJob(
   districtId: string,
   sourceAdapter: string,
   category?: string,
-  skipInstagram = false,
+  skipInstagram = true,
   limit?: number,
 ) {
   const supabase = createServiceRoleClient()
 
-  // Job'u RUNNING olarak güncelle
   await supabase
     .from('scrape_jobs')
     .update({ status: 'RUNNING' as ScrapeJobStatus, started_at: new Date().toISOString() })
     .eq('id', jobId)
 
   try {
-    // İlçe adını DB'den çek
     const { data: district } = await supabase
       .from('districts')
       .select('name')
       .eq('id', districtId)
-      .single()
+      .maybeSingle()
 
     const adapter = createLeadSource(sourceAdapter as 'google-places' | 'apify' | 'instagram')
     const result = await adapter.search({ districtId, districtName: district?.name, category, limit })
 
-    let leadsNew = 0
-    let leadsUpdated = 0
-    const affectedLeadIds: string[] = []
+    const { leadsNew, leadsUpdated, affectedLeadIds } = await batchUpsertLeads(
+      supabase,
+      result.leads,
+      districtId,
+      category
+    )
 
-    for (const lead of result.leads) {
-      // Mevcut lead'i kontrol et (google_place_id veya ig_username ile)
-      if (lead.googlePlaceId) {
-        const instagramSeed = buildInstagramSeedUpdateFromWebsite(lead.website)
-        const { data: existing } = await supabase
-          .from('leads')
-          .select('id, ig_username')
-          .eq('google_place_id', lead.googlePlaceId)
-          .single()
-
-        if (existing) {
-          await supabase
-            .from('leads')
-            .update({
-              business_name: lead.businessName,
-              category: lead.category ?? category,
-              address: lead.address,
-              phone: lead.phone,
-              email: lead.email,
-              website: lead.website,
-              lat: lead.lat,
-              lng: lead.lng,
-              google_rating: lead.googleRating,
-              google_review_count: lead.googleReviewCount,
-              google_photo_count: lead.googlePhotoCount,
-              google_is_claimed: lead.googleIsClaimed,
-              ...((!existing.ig_username || existing.ig_username === '') && instagramSeed ? instagramSeed : {}),
-            })
-            .eq('id', existing.id)
-          affectedLeadIds.push(existing.id)
-          leadsUpdated++
-        } else {
-          const { data: inserted } = await supabase.from('leads').insert({
-            district_id: districtId,
-            business_name: lead.businessName,
-            category: lead.category ?? category,
-            address: lead.address,
-            phone: lead.phone,
-            email: lead.email,
-            website: lead.website,
-            lat: lead.lat,
-            lng: lead.lng,
-            google_place_id: lead.googlePlaceId,
-            google_rating: lead.googleRating,
-            google_review_count: lead.googleReviewCount,
-            google_photo_count: lead.googlePhotoCount,
-            google_is_claimed: lead.googleIsClaimed,
-            ...(instagramSeed ?? {}),
-          }).select('id').single()
-          if (inserted) affectedLeadIds.push(inserted.id)
-          leadsNew++
-        }
-      } else if (lead.igUsername) {
-        const { data: existing } = await supabase
-          .from('leads')
-          .select('id')
-          .eq('ig_username', lead.igUsername)
-          .single()
-
-        if (existing) {
-          await supabase
-            .from('leads')
-            .update({
-              ig_follower_count: lead.igFollowerCount,
-              ig_post_count: lead.igPostCount,
-              ig_avg_likes: lead.igAvgLikes,
-              ig_last_post_date: lead.igLastPostDate,
-              ig_has_highlights: lead.igHasHighlights,
-              ig_bio_contains_agency: lead.igBioContainsAgency,
-              ig_has_bio_link: lead.igHasBioLink,
-              ig_engagement_rate: lead.igEngagementRate,
-              ig_posting_regularity: lead.igPostingRegularity,
-            })
-            .eq('id', existing.id)
-          affectedLeadIds.push(existing.id)
-          leadsUpdated++
-        } else {
-          const { data: inserted } = await supabase.from('leads').insert({
-            district_id: districtId,
-            business_name: lead.businessName,
-            ig_username: lead.igUsername,
-            ig_follower_count: lead.igFollowerCount,
-            ig_post_count: lead.igPostCount,
-            ig_avg_likes: lead.igAvgLikes,
-            ig_last_post_date: lead.igLastPostDate,
-            ig_has_highlights: lead.igHasHighlights,
-            ig_bio_contains_agency: lead.igBioContainsAgency,
-            ig_has_bio_link: lead.igHasBioLink,
-            ig_engagement_rate: lead.igEngagementRate,
-            ig_posting_regularity: lead.igPostingRegularity,
-          }).select('id').single()
-          if (inserted) affectedLeadIds.push(inserted.id)
-          leadsNew++
-        }
-      } else {
-        const instagramSeed = buildInstagramSeedUpdateFromWebsite(lead.website)
-        const { data: inserted } = await supabase.from('leads').insert({
-          district_id: districtId,
-          business_name: lead.businessName,
-          category: lead.category ?? category,
-          address: lead.address,
-          phone: lead.phone,
-          email: lead.email,
-          website: lead.website,
-          lat: lead.lat,
-          lng: lead.lng,
-          ...(instagramSeed ?? {}),
-        }).select('id').single()
-        if (inserted) affectedLeadIds.push(inserted.id)
-        leadsNew++
-      }
-    }
-
-    // Otomatik Instagram zenginleştirme + puanlama
     if (affectedLeadIds.length > 0) {
       if (!skipInstagram) {
-        await autoEnrichInstagram(supabase, affectedLeadIds)
+        await autoEnrichInstagramParallel(supabase, affectedLeadIds)
       }
       await autoScoreLeads(supabase, affectedLeadIds)
     }
 
-    // Job'u COMPLETED olarak güncelle
     await supabase
       .from('scrape_jobs')
       .update({
@@ -317,12 +207,184 @@ async function runScrapeJob(
 }
 
 /**
- * Lead'lerin Instagram verilerini 3 katmanlı stratejiyle zenginleştir:
- * 1. Website URL'si doğrudan Instagram linki mi?
- * 2. Website HTML'inden Instagram linki çıkar
- * 3. Aday üretimi + Apify doğrulama
+ * 3 grupta toplu upsert (N+1 yerine 4-5 query)
+ *  - googlePlaceId olanlar → upsert(onConflict: 'google_place_id')
+ *  - sadece igUsername olanlar → mevcutları topluca SELECT + bulk update / bulk insert
+ *  - ne google ne IG → düz toplu insert
  */
-async function autoEnrichInstagram(
+async function batchUpsertLeads(
+  supabase: ReturnType<typeof createServiceRoleClient>,
+  leads: RawLeadData[],
+  districtId: string,
+  defaultCategory?: string
+): Promise<{ leadsNew: number; leadsUpdated: number; affectedLeadIds: string[] }> {
+  const googleLeads = leads.filter((l) => !!l.googlePlaceId)
+  const igOnlyLeads = leads.filter((l) => !l.googlePlaceId && !!l.igUsername)
+  const otherLeads = leads.filter((l) => !l.googlePlaceId && !l.igUsername)
+
+  let leadsNew = 0
+  let leadsUpdated = 0
+  const affectedLeadIds: string[] = []
+
+  // 1) Google: tek upsert
+  if (googleLeads.length > 0) {
+    const { data: existing } = await supabase
+      .from('leads')
+      .select('id, google_place_id, ig_username')
+      .in('google_place_id', googleLeads.map((l) => l.googlePlaceId!))
+
+    const existingMap = new Map(
+      (existing ?? []).map((row) => [row.google_place_id as string, row])
+    )
+
+    const upsertRows = googleLeads.map((lead) => {
+      const existingRow = existingMap.get(lead.googlePlaceId!)
+      const seed = buildInstagramSeedUpdateFromWebsite(lead.website)
+      const includeSeed = seed && (!existingRow?.ig_username || existingRow.ig_username === '')
+
+      return {
+        ...(existingRow ? { id: existingRow.id } : {}),
+        district_id: districtId,
+        business_name: lead.businessName,
+        category: lead.category ?? defaultCategory,
+        address: lead.address,
+        phone: lead.phone,
+        email: lead.email,
+        website: lead.website,
+        lat: lead.lat,
+        lng: lead.lng,
+        google_place_id: lead.googlePlaceId,
+        google_rating: lead.googleRating,
+        google_review_count: lead.googleReviewCount,
+        google_photo_count: lead.googlePhotoCount,
+        google_is_claimed: lead.googleIsClaimed,
+        ...(includeSeed ? seed : {}),
+      }
+    })
+
+    const { data: upserted, error } = await supabase
+      .from('leads')
+      .upsert(upsertRows, { onConflict: 'google_place_id' })
+      .select('id, google_place_id')
+
+    if (error) {
+      logger.error('Google leads upsert hatası', { error: error.message })
+      throw new Error('Lead toplu upsert basarisiz')
+    }
+
+    for (const row of upserted ?? []) {
+      affectedLeadIds.push(row.id as string)
+      if (existingMap.has(row.google_place_id as string)) {
+        leadsUpdated++
+      } else {
+        leadsNew++
+      }
+    }
+  }
+
+  // 2) IG-only: bulk SELECT, sonra bulk update vs bulk insert (UNIQUE constraint olmadığı için manuel split)
+  if (igOnlyLeads.length > 0) {
+    const usernames = igOnlyLeads.map((l) => l.igUsername!)
+    const { data: existing } = await supabase
+      .from('leads')
+      .select('id, ig_username')
+      .in('ig_username', usernames)
+
+    const existingMap = new Map((existing ?? []).map((row) => [row.ig_username as string, row.id as string]))
+
+    const updates: Array<{ id: string; row: Record<string, unknown> }> = []
+    const inserts: Array<Record<string, unknown>> = []
+
+    for (const lead of igOnlyLeads) {
+      const igPayload = {
+        ig_follower_count: lead.igFollowerCount,
+        ig_post_count: lead.igPostCount,
+        ig_avg_likes: lead.igAvgLikes,
+        ig_last_post_date: lead.igLastPostDate,
+        ig_has_highlights: lead.igHasHighlights,
+        ig_bio_contains_agency: lead.igBioContainsAgency,
+        ig_has_bio_link: lead.igHasBioLink,
+        ig_engagement_rate: lead.igEngagementRate,
+        ig_posting_regularity: lead.igPostingRegularity,
+      }
+
+      const existingId = existingMap.get(lead.igUsername!)
+      if (existingId) {
+        updates.push({ id: existingId, row: igPayload })
+        affectedLeadIds.push(existingId)
+        leadsUpdated++
+      } else {
+        inserts.push({
+          district_id: districtId,
+          business_name: lead.businessName,
+          ig_username: lead.igUsername,
+          ...igPayload,
+        })
+      }
+    }
+
+    // Bulk update — Supabase tek sorguda farklı satıra farklı değer atayamaz; paralel UPDATE
+    await Promise.all(
+      updates.map(({ id, row }) => supabase.from('leads').update(row).eq('id', id))
+    )
+
+    if (inserts.length > 0) {
+      const { data: inserted, error } = await supabase
+        .from('leads')
+        .insert(inserts)
+        .select('id')
+
+      if (error) {
+        logger.warn('IG-only insert hatası', { error: error.message })
+      } else {
+        for (const row of inserted ?? []) {
+          affectedLeadIds.push(row.id as string)
+          leadsNew++
+        }
+      }
+    }
+  }
+
+  // 3) Diğer (ne google ne ig) → düz toplu insert
+  if (otherLeads.length > 0) {
+    const inserts = otherLeads.map((lead) => {
+      const seed = buildInstagramSeedUpdateFromWebsite(lead.website)
+      return {
+        district_id: districtId,
+        business_name: lead.businessName,
+        category: lead.category ?? defaultCategory,
+        address: lead.address,
+        phone: lead.phone,
+        email: lead.email,
+        website: lead.website,
+        lat: lead.lat,
+        lng: lead.lng,
+        ...(seed ?? {}),
+      }
+    })
+
+    const { data: inserted, error } = await supabase
+      .from('leads')
+      .insert(inserts)
+      .select('id')
+
+    if (error) {
+      logger.warn('Diğer leads insert hatası', { error: error.message })
+    } else {
+      for (const row of inserted ?? []) {
+        affectedLeadIds.push(row.id as string)
+        leadsNew++
+      }
+    }
+  }
+
+  return { leadsNew, leadsUpdated, affectedLeadIds }
+}
+
+/**
+ * Paralel IG enrichment — concurrency limit ile
+ */
+async function autoEnrichInstagramParallel(
   supabase: ReturnType<typeof createServiceRoleClient>,
   leadIds: string[]
 ) {
@@ -341,31 +403,35 @@ async function autoEnrichInstagram(
 
     if (!leads || leads.length === 0) return
 
+    const queue = (leads as Lead[]).filter((lead) =>
+      !lead.ig_username || needsInstagramProfileBackfill(lead)
+    )
+
     let enriched = 0
 
-    for (const lead of leads as Lead[]) {
-      const shouldProcess = !lead.ig_username || needsInstagramProfileBackfill(lead)
-      if (!shouldProcess) {
-        continue
+    // Concurrency-limited paralel işleyici
+    const workers = Array.from({ length: Math.min(IG_ENRICHMENT_CONCURRENCY, queue.length) }, async () => {
+      while (queue.length > 0) {
+        const lead = queue.shift()
+        if (!lead) break
+        try {
+          const discovery = await discoverOrBackfillInstagramProfileForLead(lead, adapter)
+          if (!discovery) continue
+          await supabase
+            .from('leads')
+            .update(buildInstagramLeadUpdate(discovery))
+            .eq('id', lead.id)
+          enriched++
+        } catch (err) {
+          logger.warn('Otomatik IG zenginleştirme hatası', {
+            leadId: lead.id,
+            error: String(err),
+          })
+        }
       }
+    })
 
-      try {
-        const discovery = await discoverOrBackfillInstagramProfileForLead(lead, adapter)
-        if (!discovery) continue
-
-        await supabase
-          .from('leads')
-          .update(buildInstagramLeadUpdate(discovery))
-          .eq('id', lead.id)
-
-        enriched++
-      } catch (err) {
-        logger.warn('Otomatik IG zenginleştirme hatası', {
-          leadId: lead.id,
-          error: String(err),
-        })
-      }
-    }
+    await Promise.all(workers)
 
     logger.info('Otomatik Instagram zenginleştirme tamamlandı', { enriched, total: leads.length })
   } catch (error) {
@@ -388,31 +454,26 @@ async function autoScoreLeads(
 
     if (!leads || leads.length === 0) return
 
-    for (const lead of leads as Lead[]) {
-      const signals = buildAllSignals(lead)
-      const result = calculateNeedScore(signals)
+    await Promise.all(
+      (leads as Lead[]).map(async (lead) => {
+        const signals = buildAllSignals(lead)
+        const result = calculateNeedScore(signals)
 
-      // Temel skorlar (her zaman mevcut kolonlar)
-      const baseUpdate = {
-        need_score: result.totalScore,
-        google_sub_score: result.googleSubScore,
-        instagram_sub_score: result.instagramSubScore,
-        recommendation: result.recommendation,
-      }
+        const update = {
+          need_score: result.totalScore,
+          google_sub_score: result.googleSubScore,
+          instagram_sub_score: result.instagramSubScore,
+          website_sub_score: result.websiteSubScore,
+          marketing_sub_score: result.marketingSubScore,
+          recommendation: result.recommendation,
+        }
 
-      // Yeni kolonlar (migration sonrasi)
-      const extendedUpdate = {
-        ...baseUpdate,
-        website_sub_score: result.websiteSubScore,
-        marketing_sub_score: result.marketingSubScore,
-      }
-
-      // Once extended dene, basarisiz olursa base ile dene
-      const { error } = await supabase.from('leads').update(extendedUpdate).eq('id', lead.id)
-      if (error) {
-        await supabase.from('leads').update(baseUpdate).eq('id', lead.id)
-      }
-    }
+        const { error } = await supabase.from('leads').update(update).eq('id', lead.id)
+        if (error) {
+          logger.warn('Otomatik puanlama lead başarısız', { leadId: lead.id, error: error.message })
+        }
+      })
+    )
 
     logger.info('Otomatik puanlama tamamlandı', { count: leads.length })
   } catch (error) {

@@ -62,7 +62,9 @@ export class ApifyAdapter implements ILeadSource {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             searchStringsArray: [query.category ?? 'işletme'],
-            locationQuery: query.districtId,
+            locationQuery: query.districtName
+              ? `${query.districtName}, İstanbul, Türkiye`
+              : 'İstanbul, Türkiye',
             language: 'tr',
             maxCrawledPlacesPerSearch: query.limit ?? 50,
           }),
@@ -72,7 +74,11 @@ export class ApifyAdapter implements ILeadSource {
 
       if (!runResponse.ok) {
         const errorText = await runResponse.text()
-        throw new ExternalServiceError('Apify', `Actor başlatılamadı: HTTP ${runResponse.status} - ${errorText}`)
+        logger.warn('Apify actor başlatma başarısız', {
+          status: runResponse.status,
+          body: errorText.slice(0, 500),
+        })
+        throw new ExternalServiceError('Apify', `Actor başlatılamadı: HTTP ${runResponse.status}`)
       }
 
       const runData: ApifyRunResponse = await runResponse.json()
@@ -92,7 +98,11 @@ export class ApifyAdapter implements ILeadSource {
 
       if (!dataResponse.ok) {
         const errorText = await dataResponse.text()
-        throw new ExternalServiceError('Apify', `Veri alınamadı: HTTP ${dataResponse.status} - ${errorText}`)
+        logger.warn('Apify veri alma başarısız', {
+          status: dataResponse.status,
+          body: errorText.slice(0, 500),
+        })
+        throw new ExternalServiceError('Apify', `Veri alınamadı: HTTP ${dataResponse.status}`)
       }
 
       const items: ApifyGoogleMapsResult[] = await dataResponse.json()
@@ -137,7 +147,11 @@ export class ApifyAdapter implements ILeadSource {
 
       if (!response.ok) {
         const errorText = await response.text()
-        throw new ExternalServiceError('Apify', `Run durumu alınamadı: HTTP ${response.status} - ${errorText}`)
+        logger.warn('Apify run durumu alma başarısız', {
+          status: response.status,
+          body: errorText.slice(0, 500),
+        })
+        throw new ExternalServiceError('Apify', `Run durumu alınamadı: HTTP ${response.status}`)
       }
 
       const data: ApifyRunResponse = await response.json()

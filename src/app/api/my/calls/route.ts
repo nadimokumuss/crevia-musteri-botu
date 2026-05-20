@@ -21,7 +21,7 @@ export async function GET(request: NextRequest) {
       .from('agents')
       .select('id')
       .eq('user_id', user.id)
-      .single()
+      .maybeSingle()
 
     if (!agent) {
       return NextResponse.json({ error: 'Ajan kaydı bulunamadı' }, { status: 404 })
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       .select('*')
       .eq('agent_id', agent.id)
       .eq('list_date', date)
-      .single()
+      .maybeSingle()
 
     if (!callList) {
       return NextResponse.json(null)

@@ -1,3 +1,7 @@
+> **NOT (Mayıs 2026):** Bu doküman erken konsept fazından kalmadır ve **uygulanan algoritmayı yansıtmaz**. Burada Google: 50 / Instagram: 50 ikili sistem anlatılır; gerçek üretim algoritması Mayıs 2026'dan itibaren **4 sütunlu** (Google: 30 / Instagram: 30 / Website: 30 / Marketing: 20) sistemdir. Güncel ve uygulanan algoritma için → [docs/scoring-algorithm.md](docs/scoring-algorithm.md). Bu dosya tarihsel referans olarak korunur.
+
+---
+
 Amacımız şu: **Dijital varlığı zayıf ama fiziksel/ticari potansiyeli yüksek** olan işletmelere en yüksek puanı verip satış ekibini onlara yönlendirmek; dijitalde zaten mükemmel olanları ise elemek.
 
 İşte sistemi otonom hale getirecek, 100 üzerinden değerlendirilen ideal puanlama ve eylem matrisi:

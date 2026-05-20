@@ -17,39 +17,11 @@ import { NotesDialog } from '@/components/shared/notes-dialog'
 import { PreferencesBanner } from '@/components/shared/preferences-banner'
 import { CallExportButtons } from '@/components/calls/call-export-buttons'
 import { getTodayDateInIstanbul } from '@/lib/date-utils'
-import { getInstagramProfileUrl, normalizeInstagramUsername } from '@/lib/instagram-utils'
+import { getInstagramProfileUrl } from '@/lib/instagram-utils'
+import { InstagramLink } from '@/components/ui/instagram-link'
 import type { CallListItem } from '@/types/call'
 
-// Instagram ikonu (SVG)
-function InstagramIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
-    </svg>
-  )
-}
-
-function InstagramLink({ username }: { username?: string | null }) {
-  const normalizedUsername = normalizeInstagramUsername(username)
-  const instagramUrl = getInstagramProfileUrl(username)
-
-  if (!normalizedUsername || !instagramUrl) {
-    return <span className="text-xs text-muted-foreground">Instagram yok</span>
-  }
-
-  return (
-    <a
-      href={instagramUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 text-pink-600 hover:text-pink-700"
-      title={`@${normalizedUsername}`}
-    >
-      <InstagramIcon className="h-4 w-4" />
-      <span>@{normalizedUsername}</span>
-    </a>
-  )
-}
+type CallStatus = CallListItem['status']
 
 async function readErrorMessage(response: Response, fallbackMessage: string): Promise<string> {
   const data = await response.json().catch(() => null)
@@ -74,7 +46,7 @@ interface MyCallListData {
   completed_items: number
 }
 
-const CALL_OUTCOMES = [
+const CALL_OUTCOMES: ReadonlyArray<{ value: CallStatus; label: string; className: string }> = [
   { value: 'PENDING', label: 'Bekliyor', className: 'bg-gray-100 text-gray-800' },
   { value: 'COMPLETED', label: 'Tamamlandı', className: 'bg-green-100 text-green-800' },
   { value: 'NO_ANSWER', label: 'Cevap Yok', className: 'bg-yellow-100 text-yellow-800' },
@@ -89,10 +61,18 @@ export default function MyCallsPage() {
   const [callList, setCallList] = useState<MyCallListData | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [notesTarget, setNotesTarget] = useState<{ leadId: string; notes: string } | null>(null)
-  const [selectedDate, setSelectedDate] = useState(() => getTodayDateInIstanbul())
+  // Hydration safety: server'da boş, client mount'ta tarih set et
+  const [selectedDate, setSelectedDate] = useState<string>('')
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [prioritizeInstagram, setPrioritizeInstagram] = useState(true)
   const callListRequestRef = useRef(0)
+
+  // Mount sonrası tarihi ayarla — SSR/client mismatch'i önler
+  useEffect(() => {
+    if (!selectedDate) {
+      setSelectedDate(getTodayDateInIstanbul())
+    }
+  }, [selectedDate])
 
   const loadCallList = useCallback(async (date: string) => {
     const requestId = ++callListRequestRef.current
@@ -129,16 +109,18 @@ export default function MyCallsPage() {
   }, [])
 
   useEffect(() => {
+    if (!selectedDate) return
     void loadCallList(selectedDate)
   }, [loadCallList, selectedDate])
 
-  async function updateCallOutcome(leadId: string, status: string, outcome?: string) {
+  async function updateCallOutcome(leadId: string, status: CallStatus, outcome?: string) {
     setErrorMsg(null)
     const prev = callList
+    // Optimistic update
     setCallList((p) => {
       if (!p) return p
       const items = p.items.map((item) =>
-        item.leadId === leadId ? { ...item, status: status as CallListItem['status'], outcome } : item
+        item.leadId === leadId ? { ...item, status, outcome } : item
       )
       const completedItems = items.filter((i) => i.status !== 'PENDING').length
       return { ...p, items, completed_items: completedItems }
@@ -148,12 +130,25 @@ export default function MyCallsPage() {
       const res = await fetch(`/api/my/calls/${leadId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status, outcome: status === 'PENDING' ? undefined : outcome, date: selectedDate }),
+        body: JSON.stringify({ status, outcome: status === 'PENDING' ? undefined : outcome }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
         setErrorMsg(`Güncelleme başarısız: ${err.error ?? res.status}`)
         setCallList(prev)
+        return
+      }
+      // Server-replace: RPC döner authoritative items, lost-update'i önler
+      const data = await res.json().catch(() => null) as
+        | { items?: CallListItem[]; completedItems?: number; totalItems?: number }
+        | null
+      if (data?.items) {
+        setCallList((p) => p ? {
+          ...p,
+          items: data.items!,
+          completed_items: data.completedItems ?? p.completed_items,
+          total_items: data.totalItems ?? p.total_items,
+        } : p)
       }
     } catch {
       setErrorMsg('Sunucuya bağlanılamadı')
@@ -177,12 +172,17 @@ export default function MyCallsPage() {
       const res = await fetch(`/api/my/calls/${leadId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ notes, date: selectedDate }),
+        body: JSON.stringify({ notes }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ error: `HTTP ${res.status}` }))
         setErrorMsg(`Not kaydedilemedi: ${err.error ?? res.status}`)
         setCallList(prev)
+        return
+      }
+      const data = await res.json().catch(() => null) as { items?: CallListItem[] } | null
+      if (data?.items) {
+        setCallList((p) => p ? { ...p, items: data.items! } : p)
       }
     } catch {
       setErrorMsg('Sunucuya bağlanılamadı')

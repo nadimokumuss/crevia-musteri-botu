@@ -84,8 +84,10 @@ export async function discoverInstagramProfileForLead(
   if (lead.website && !extractInstagramFromUrl(lead.website)) {
     try {
       const url = lead.website.startsWith('http') ? lead.website : `https://${lead.website}`
+      const envTimeout = Number(process.env.INSTAGRAM_WEBSITE_FETCH_TIMEOUT_MS)
+      const timeoutMs = options.websiteFetchTimeoutMs ?? (Number.isFinite(envTimeout) ? envTimeout : 10000)
       const response = await fetch(url, {
-        signal: AbortSignal.timeout(options.websiteFetchTimeoutMs ?? 5000),
+        signal: AbortSignal.timeout(timeoutMs),
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; CreviaSalesBot/1.0)' },
       })
 

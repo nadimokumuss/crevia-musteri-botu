@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createAssignmentSchema, updateAssignmentSchema } from '@/lib/validators'
 import { createServiceRoleClient } from '@/infra/supabase/server'
 import { logLeadActivity } from '@/infra/supabase/log-activity'
-import { acquireLock } from '@/core/assignment/collision-guard'
+import { acquireLock, releaseLock } from '@/core/assignment/collision-guard'
 import { logger } from '@/lib/logger'
 
 export async function GET(request: NextRequest) {
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Atama oluşturulamadı' }, { status: 409 })
     }
 
-    logLeadActivity({
+    await logLeadActivity({
       leadId: parsed.lead_id,
       activityType: 'ASSIGNMENT_CREATED',
       description: `Yeni ${parsed.assignment_type} ataması oluşturuldu (${parsed.scheduled_date})`,
@@ -100,9 +100,13 @@ export async function PATCH(request: NextRequest) {
       .from('assignments')
       .select('id, status, lead_id, agent_id')
       .eq('id', assignmentId)
-      .single()
+      .maybeSingle()
 
-    if (fetchError || !existing) {
+    if (fetchError) {
+      logger.error('Atama bilgisi alinamadi', { error: fetchError.message })
+      return NextResponse.json({ error: 'Veri alınamadı' }, { status: 500 })
+    }
+    if (!existing) {
       return NextResponse.json({ error: 'Atama bulunamadı' }, { status: 404 })
     }
 
@@ -111,7 +115,7 @@ export async function PATCH(request: NextRequest) {
       .update(parsed)
       .eq('id', assignmentId)
       .select('*, leads(business_name, need_score), agents!agent_id(full_name)')
-      .single()
+      .maybeSingle()
 
     if (error) {
       logger.error('Atama güncellenemedi', { error: error.message, assignmentId })
@@ -120,8 +124,13 @@ export async function PATCH(request: NextRequest) {
 
     logger.info('Atama güncellendi', { assignmentId, status: parsed.status })
 
+    // COMPLETED ya da CANCELLED durumlarında kilidi serbest bırak
+    if (parsed.status === 'COMPLETED' || parsed.status === 'CANCELLED') {
+      await releaseLock(assignmentId)
+    }
+
     if (existing.lead_id) {
-      logLeadActivity({
+      await logLeadActivity({
         leadId: existing.lead_id,
         activityType: 'ASSIGNMENT_UPDATED',
         description: `Atama durumu ${existing.status} → ${parsed.status ?? existing.status} olarak güncellendi`,

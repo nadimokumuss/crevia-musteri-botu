@@ -10,6 +10,39 @@ import {
   extractWebsiteDomain,
 } from '@/lib/instagram-utils'
 
+describe('normalizeTurkish — edge cases', () => {
+  it('boş string için boş döner (TypeError fırlatmaz)', () => {
+    expect(normalizeTurkish('')).toBe('')
+  })
+
+  it('sadece özel karakter için boş döner', () => {
+    expect(normalizeTurkish('!@#$%')).toBe('')
+  })
+})
+
+describe('extractInstagramFromHtml — strict regex', () => {
+  it('geçerli kullanıcı adını yakalar', () => {
+    const html = '<a href="https://instagram.com/sahanrestoran">IG</a>'
+    expect(extractInstagramFromHtml(html)).toBe('sahanrestoran')
+  })
+
+  it('alt çizgi ile başlayan ismi yakalamaz', () => {
+    // Strict regex: ilk karakter alphanumeric olmalı
+    const html = '<a href="https://instagram.com/_invalid">x</a>'
+    expect(extractInstagramFromHtml(html)).toBe(null)
+  })
+
+  it('sistem yollarını filtreler', () => {
+    const html = '<a href="https://instagram.com/explore">x</a>'
+    expect(extractInstagramFromHtml(html)).toBe(null)
+  })
+
+  it('case-insensitive sistem yolu filtresi', () => {
+    const html = '<a href="https://instagram.com/EXPLORE">x</a>'
+    expect(extractInstagramFromHtml(html)).toBe(null)
+  })
+})
+
 describe('normalizeTurkish', () => {
   it('Türkçe karakterleri ASCII karşılıklarına dönüştürür', () => {
     expect(normalizeTurkish('Çağdaş')).toBe('cagdas')

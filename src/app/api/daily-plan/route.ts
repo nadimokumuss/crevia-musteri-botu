@@ -13,24 +13,18 @@ export async function DELETE(request: NextRequest) {
 
     const supabase = createServiceRoleClient()
 
-    const { error: e1 } = await supabase.from('assignments').delete().eq('scheduled_date', dateStr)
-    const { error: e2 } = await supabase.from('routes').delete().eq('route_date', dateStr)
-    const { error: e3 } = await supabase.from('call_lists').delete().eq('list_date', dateStr)
-    const { error: e4 } = await supabase.from('weekly_plans').delete().eq('week_start', dateStr)
+    const { data, error } = await supabase.rpc('reset_daily_plan_atomic', {
+      p_date: dateStr,
+    })
 
-    if (e1 || e2 || e3 || e4) {
-      logger.warn('Günlük sıfırlama sırasında bazı hatalar', {
-        date: dateStr,
-        assignments: e1?.message,
-        routes: e2?.message,
-        callLists: e3?.message,
-        plans: e4?.message,
-      })
+    if (error) {
+      logger.error('Daily plan reset RPC hatası', { error: error.message, code: error.code })
+      return NextResponse.json({ error: 'Sunucu hatası' }, { status: 500 })
     }
 
-    logger.info('Günlük dağıtım sıfırlandı', { date: dateStr })
+    logger.info('Günlük dağıtım sıfırlandı', { date: dateStr, stats: data })
 
-    return NextResponse.json({ success: true, date: dateStr })
+    return NextResponse.json({ success: true, date: dateStr, stats: data })
   } catch (error) {
     logger.error('Daily plan DELETE hatası', { error: String(error) })
     return NextResponse.json({ error: 'Sunucu hatası' }, { status: 500 })
