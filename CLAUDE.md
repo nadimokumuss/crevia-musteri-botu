@@ -91,7 +91,7 @@ Bu endpoint'ler `410` doner:
 
 - `POST /api/auth` aginda anonim cagri yapilamaz; caller'in `agents.role = 'ADMIN'` olmasi sart, kendi rolunu degistiremez.
 - Logger PII redaction: `phone`, `email`, `token`, `password`, `authorization` anahtarlari otomatik `***` ile maskelenir.
-- `src/middleware.ts` — basit in-memory rate limit (`/api/scraper`, `/api/calls`, `/api/leads/enrich-*`, `/api/auth` icin sikilastirilmis kotalar).
+- `src/proxy.ts` — Next.js 16 proxy (auth + RBAC + in-memory rate limit; `/api/scraper`, `/api/calls`, `/api/leads/enrich-*`, `/api/auth`, `/api/audit/*` icin sikilastirilmis kotalar).
 - Cron endpoint'leri `CRON_SECRET` env var ile korunur (Vercel cron'lari header'i otomatik gonderir).
 
 ## Konfigurasyon (env)
